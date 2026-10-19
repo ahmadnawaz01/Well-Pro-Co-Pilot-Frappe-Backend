@@ -1,0 +1,78 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-10-20 03:15:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "allow_ai_processing",
+  "allow_voice_logging",
+  "allow_document_ocr",
+  "track_social_wellbeing"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "allow_ai_processing",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Allow AI Processing"
+  },
+  {
+   "default": "1",
+   "fieldname": "allow_voice_logging",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Allow Voice Logging"
+  },
+  {
+   "default": "1",
+   "fieldname": "allow_document_ocr",
+   "fieldtype": "Check",
+   "label": "Allow Document OCR"
+  },
+  {
+   "default": "1",
+   "fieldname": "track_social_wellbeing",
+   "fieldtype": "Check",
+   "label": "Track Social Wellbeing"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-20 03:15:00.000000",
+ "modified_by": "Administrator",
+ "module": "Well_pro_app",
+ "name": "User Consent Preference",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

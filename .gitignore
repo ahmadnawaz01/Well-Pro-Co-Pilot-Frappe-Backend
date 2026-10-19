@@ -1,7 +1,32 @@
+# Python bytecode and cache folders
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# Node/JavaScript dependencies and build logs
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+
+# Translation compiler outputs
+*.mo
+
+# System and environment storage files
 .DS_Store
-*.pyc
-*.egg-info
+Thumbs.db
+.env
+.venv
+env/
+
+# Text editor and IDE configuration suites
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
 *.swp
-tags
-node_modules
-__pycache__
