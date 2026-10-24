@@ -1,0 +1,14 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.insert_record",
+  "_description": "SECURITY TEST: Passing DocTypes outside allowlist (e.g. User, Role, System Settings) must throw PermissionError",
+  "_expected_status": 403,
+  "doctype": "User",
+  "record_data": {
+    "email": "injected_admin@example.com",
+    "roles": [
+      {
+        "role": "System Manager"
+      }
+    ]
+  }
+}

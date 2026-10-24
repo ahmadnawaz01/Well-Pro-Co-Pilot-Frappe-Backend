@@ -1,0 +1,6 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.delete_record",
+  "_description": "Deletes an owned record and recalculates score for the affected date",
+  "doctype": "Health Activity",
+  "name": "HEA-SNP-2026-10-00001"
+}

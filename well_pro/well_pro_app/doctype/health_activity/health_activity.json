@@ -1,0 +1,128 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "HEA-SNP-.YYYY.-.MM.-.#####",
+ "creation": "2026-10-23 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "activity_type",
+  "logged_at",
+  "duration_minutes",
+  "distance_km",
+  "steps",
+  "calories_burned",
+  "intensity",
+  "source",
+  "raw_input"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "activity_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Activity Type",
+   "options": "Walking\nRunning\nCycling\nGym\nSports\nOther",
+   "reqd": 1
+  },
+  {
+   "default": "Now",
+   "fieldname": "logged_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Logged At",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "duration_minutes",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Duration (Minutes)"
+  },
+  {
+   "fieldname": "distance_km",
+   "fieldtype": "Float",
+   "label": "Distance (KM)"
+  },
+  {
+   "fieldname": "steps",
+   "fieldtype": "Int",
+   "label": "Steps"
+  },
+  {
+   "fieldname": "calories_burned",
+   "fieldtype": "Float",
+   "label": "Calories Burned"
+  },
+  {
+   "fieldname": "intensity",
+   "fieldtype": "Select",
+   "label": "Intensity",
+   "options": "Low\nModerate\nHigh"
+  },
+  {
+   "default": "Manual Entry",
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Manual Entry\nVoice\nWearable\nAI Extraction\nOther"
+  },
+  {
+   "fieldname": "raw_input",
+   "fieldtype": "Text",
+   "label": "Raw Input"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-23 03:49:51.349270",
+ "modified_by": "Administrator",
+ "module": "Well_pro_app",
+ "name": "Health Activity",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "if_owner": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

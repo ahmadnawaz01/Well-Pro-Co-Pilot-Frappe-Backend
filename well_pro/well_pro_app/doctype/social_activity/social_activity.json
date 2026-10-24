@@ -1,0 +1,153 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "SOC-ACT-.YYYY.-.MM.-.#####",
+ "creation": "2026-10-23 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_details",
+  "user",
+  "logged_at",
+  "interaction_type",
+  "relationship_type",
+  "column_break_1",
+  "duration_minutes",
+  "interaction_quality",
+  "connection_level",
+  "mood_after",
+  "section_break_notes",
+  "notes",
+  "source",
+  "raw_input"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_details",
+   "fieldtype": "Section Break",
+   "label": "Interaction Details"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "Now",
+   "fieldname": "logged_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Logged At",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "interaction_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Interaction Type",
+   "options": "In Person\nCall\nVideo Call\nMessaging\nGroup Activity\nCommunity Activity\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "relationship_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Relationship Type",
+   "options": "Family\nFriend\nPartner\nColleague\nCommunity\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "duration_minutes",
+   "fieldtype": "Float",
+   "label": "Duration (Minutes)"
+  },
+  {
+   "fieldname": "interaction_quality",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Interaction Quality (1-5)"
+  },
+  {
+   "fieldname": "connection_level",
+   "fieldtype": "Int",
+   "label": "Connection Level (1-5)"
+  },
+  {
+   "fieldname": "mood_after",
+   "fieldtype": "Int",
+   "label": "Mood After (1-5)"
+  },
+  {
+   "fieldname": "section_break_notes",
+   "fieldtype": "Section Break",
+   "label": "Notes & Source"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  },
+  {
+   "default": "Manual Entry",
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Manual Entry\nVoice\nAI Extraction\nImport\nOther"
+  },
+  {
+   "fieldname": "raw_input",
+   "fieldtype": "Text",
+   "label": "Raw Input"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-23 03:47:20.837132",
+ "modified_by": "Administrator",
+ "module": "Well_pro_app",
+ "name": "Social Activity",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "if_owner": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

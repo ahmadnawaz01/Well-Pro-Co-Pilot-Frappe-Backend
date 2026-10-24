@@ -1,0 +1,11 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.insert_record",
+  "_description": "SECURITY TEST: Normal user attempting to insert record for victim@example.com must have user overridden to authenticated session user",
+  "_expected_behavior": "user field overridden to frappe.session.user",
+  "doctype": "Health Daily Record",
+  "record_data": {
+    "user": "victim@example.com",
+    "record_date": "2026-10-23",
+    "sleep_hours": 8.0
+  }
+}

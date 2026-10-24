@@ -1,0 +1,12 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.insert_record",
+  "_description": "VALIDATION TEST: Subjective ratings must be strictly 1-5; rating 9 or -1 must fail",
+  "_expected_status": 400,
+  "doctype": "Subjective Wellbeing Checkin",
+  "record_data": {
+    "date": "2026-10-23",
+    "mood": 9,
+    "energy": -1,
+    "loneliness": 10
+  }
+}

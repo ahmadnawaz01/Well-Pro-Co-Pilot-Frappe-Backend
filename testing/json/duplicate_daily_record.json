@@ -1,0 +1,10 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.insert_record",
+  "_description": "VALIDATION TEST: Inserting a second Health Daily Record for the same user on the same date must raise DuplicateEntryError",
+  "_expected_status": 409,
+  "doctype": "Health Daily Record",
+  "record_data": {
+    "record_date": "2026-10-23",
+    "sleep_hours": 6.5
+  }
+}

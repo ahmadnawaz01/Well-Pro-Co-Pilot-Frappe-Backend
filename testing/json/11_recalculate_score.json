@@ -1,0 +1,5 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.recalculate_score",
+  "_description": "Triggers explicit recalculation of daily wellbeing score for given date",
+  "date": "2026-10-23"
+}

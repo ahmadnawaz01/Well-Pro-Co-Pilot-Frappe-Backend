@@ -1,0 +1,171 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "FIN-SNP-.YYYY.-.MM.-.#####",
+ "creation": "2026-10-23 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_general",
+  "user",
+  "snapshot_date",
+  "currency",
+  "source",
+  "column_break_1",
+  "monthly_income",
+  "monthly_expenses",
+  "essential_monthly_expenses",
+  "section_break_assets",
+  "liquid_savings",
+  "investment_value",
+  "emergency_fund",
+  "budget_amount",
+  "column_break_2",
+  "outstanding_debt",
+  "monthly_debt_payment",
+  "financial_stress_rating"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_general",
+   "fieldtype": "Section Break",
+   "label": "General Overview"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "snapshot_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Snapshot Date",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency"
+  },
+  {
+   "default": "Manual Entry",
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Manual Entry\nImport\nCalculated"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "monthly_income",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Monthly Income"
+  },
+  {
+   "fieldname": "monthly_expenses",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Monthly Expenses"
+  },
+  {
+   "fieldname": "essential_monthly_expenses",
+   "fieldtype": "Currency",
+   "label": "Essential Monthly Expenses"
+  },
+  {
+   "fieldname": "section_break_assets",
+   "fieldtype": "Section Break",
+   "label": "Assets & Liabilities"
+  },
+  {
+   "fieldname": "liquid_savings",
+   "fieldtype": "Currency",
+   "label": "Liquid Savings"
+  },
+  {
+   "fieldname": "investment_value",
+   "fieldtype": "Currency",
+   "label": "Investment Value"
+  },
+  {
+   "fieldname": "emergency_fund",
+   "fieldtype": "Currency",
+   "label": "Emergency Fund"
+  },
+  {
+   "fieldname": "budget_amount",
+   "fieldtype": "Currency",
+   "label": "Budget Amount"
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "outstanding_debt",
+   "fieldtype": "Currency",
+   "label": "Outstanding Debt"
+  },
+  {
+   "fieldname": "monthly_debt_payment",
+   "fieldtype": "Currency",
+   "label": "Monthly Debt Payment"
+  },
+  {
+   "fieldname": "financial_stress_rating",
+   "fieldtype": "Int",
+   "label": "Financial Stress Rating (1-5)"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-23 03:47:46.568108",
+ "modified_by": "Administrator",
+ "module": "Well_pro_app",
+ "name": "Financial Snapshot",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "if_owner": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,0 +1,12 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.store_ai_record",
+  "_description": "Persists structured AI-extracted health log",
+  "domain": "health",
+  "record_data": {
+    "record_date": "2026-10-23",
+    "sleep_hours": 7.5,
+    "steps": 8500,
+    "water_liters": 2.5,
+    "source": "AI Extraction"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.login",
+  "_description": "Authenticates user and returns active API key and secret",
+  "usr": "sarah.connor@wellpro.test",
+  "pwd": "SecurePassword123!"
+}

@@ -1,0 +1,12 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.update_record",
+  "_description": "SECURITY TEST: Client attempting to overwrite protected system fields (owner, creation, user) must have them stripped",
+  "_expected_behavior": "protected fields stripped before save",
+  "doctype": "Health Daily Record",
+  "name": "HLT-DLY-2026-10-00001",
+  "update_data": {
+    "owner": "hacker@evil.com",
+    "user": "another_user@wellpro.test",
+    "steps": 11000
+  }
+}

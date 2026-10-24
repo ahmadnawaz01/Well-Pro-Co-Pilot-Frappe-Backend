@@ -1,0 +1,16 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.insert_record",
+  "_description": "Records high-quality social interaction",
+  "doctype": "Social Activity",
+  "record_data": {
+    "logged_at": "2026-10-23 19:30:00",
+    "interaction_type": "In Person",
+    "relationship_type": "Friend",
+    "duration_minutes": 120.0,
+    "interaction_quality": 5,
+    "connection_level": 5,
+    "mood_after": 5,
+    "notes": "Meaningful dinner and shared conversation with close friends",
+    "source": "Manual Entry"
+  }
+}

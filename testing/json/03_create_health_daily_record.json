@@ -1,0 +1,21 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.insert_record",
+  "_description": "Inserts a comprehensive daily health log and recalculates day score",
+  "doctype": "Health Daily Record",
+  "record_data": {
+    "record_date": "2026-10-23",
+    "sleep_hours": 8.0,
+    "sleep_quality": 4,
+    "steps": 10500,
+    "active_minutes": 45,
+    "exercise_minutes": 35,
+    "exercise_intensity": "Moderate",
+    "water_liters": 2.7,
+    "calories_consumed": 2100.0,
+    "protein_grams": 70.0,
+    "fruit_veg_servings": 5.0,
+    "energy_level": 4,
+    "self_rated_health": 4,
+    "source": "Manual Entry"
+  }
+}

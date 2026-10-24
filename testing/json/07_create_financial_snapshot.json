@@ -1,0 +1,19 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.insert_record",
+  "_description": "Records monthly financial snapshot with liquid assets and debt",
+  "doctype": "Financial Snapshot",
+  "record_data": {
+    "snapshot_date": "2026-10-23",
+    "monthly_income": 7000.0,
+    "monthly_expenses": 4200.0,
+    "essential_monthly_expenses": 3000.0,
+    "liquid_savings": 22000.0,
+    "investment_value": 35000.0,
+    "emergency_fund": 20000.0,
+    "budget_amount": 4500.0,
+    "outstanding_debt": 6500.0,
+    "monthly_debt_payment": 550.0,
+    "financial_stress_rating": 2,
+    "source": "Manual Entry"
+  }
+}

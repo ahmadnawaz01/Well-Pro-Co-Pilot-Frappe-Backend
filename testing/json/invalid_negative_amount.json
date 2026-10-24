@@ -1,0 +1,12 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.insert_record",
+  "_description": "SECURITY/VALIDATION TEST: Negative amount must be rejected by controller validation",
+  "_expected_status": 400,
+  "doctype": "Financial Transaction",
+  "record_data": {
+    "transaction_type": "Expense",
+    "category": "Groceries & Food",
+    "amount": -75.0,
+    "transaction_date": "2026-10-23"
+  }
+}

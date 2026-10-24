@@ -1,0 +1,8 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.signup",
+  "_description": "Registers a new user, generates API keys, creates profile & consent",
+  "email": "sarah.connor@wellpro.test",
+  "password": "SecurePassword123!",
+  "first_name": "Sarah",
+  "last_name": "Connor"
+}

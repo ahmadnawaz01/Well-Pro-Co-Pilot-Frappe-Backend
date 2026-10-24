@@ -1,0 +1,12 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.insert_record",
+  "_description": "SECURITY TEST: Direct tampering with Wellbeing Daily Score must be blocked",
+  "_expected_status": 403,
+  "doctype": "Wellbeing Daily Score",
+  "record_data": {
+    "score_date": "2026-10-23",
+    "health_score": 100.0,
+    "overall_score": 100.0,
+    "scoring_version": "v1"
+  }
+}

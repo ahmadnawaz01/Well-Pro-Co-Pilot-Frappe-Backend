@@ -1,0 +1,11 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.update_record",
+  "_description": "Safely updates an existing record and refreshes the affected date's score",
+  "doctype": "Health Daily Record",
+  "name": "HLT-DLY-2026-10-00001",
+  "update_data": {
+    "steps": 12000,
+    "active_minutes": 55,
+    "water_liters": 3.0
+  }
+}

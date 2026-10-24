@@ -1,0 +1,153 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "HLT-REC-.YYYY.-.#####",
+ "creation": "2026-10-23 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "record_date",
+  "sleep_hours",
+  "sleep_quality",
+  "steps",
+  "active_minutes",
+  "exercise_minutes",
+  "exercise_intensity",
+  "water_liters",
+  "calories_consumed",
+  "protein_grams",
+  "fruit_veg_servings",
+  "energy_level",
+  "self_rated_health",
+  "source"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "record_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Record Date",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "sleep_hours",
+   "fieldtype": "Float",
+   "label": "Sleep Hours"
+  },
+  {
+   "fieldname": "sleep_quality",
+   "fieldtype": "Int",
+   "label": "Sleep Quality (1-5)"
+  },
+  {
+   "fieldname": "steps",
+   "fieldtype": "Int",
+   "label": "Steps"
+  },
+  {
+   "fieldname": "active_minutes",
+   "fieldtype": "Int",
+   "label": "Active Minutes"
+  },
+  {
+   "fieldname": "exercise_minutes",
+   "fieldtype": "Int",
+   "label": "Exercise Minutes"
+  },
+  {
+   "fieldname": "exercise_intensity",
+   "fieldtype": "Select",
+   "label": "Exercise Intensity",
+   "options": "Low\nModerate\nHigh"
+  },
+  {
+   "fieldname": "water_liters",
+   "fieldtype": "Float",
+   "label": "Water (Liters)"
+  },
+  {
+   "fieldname": "calories_consumed",
+   "fieldtype": "Float",
+   "label": "Calories Consumed"
+  },
+  {
+   "fieldname": "protein_grams",
+   "fieldtype": "Float",
+   "label": "Protein (Grams)"
+  },
+  {
+   "fieldname": "fruit_veg_servings",
+   "fieldtype": "Float",
+   "label": "Fruit/Veg Servings"
+  },
+  {
+   "fieldname": "energy_level",
+   "fieldtype": "Int",
+   "label": "Energy Level (1-5)"
+  },
+  {
+   "fieldname": "self_rated_health",
+   "fieldtype": "Int",
+   "label": "Self Rated Health (1-5)"
+  },
+  {
+   "default": "Manual Entry",
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Manual Entry\nVoice\nWearable\nAI Extraction\nImport\nOther"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-25 01:25:36.083327",
+ "modified_by": "Administrator",
+ "module": "Well_pro_app",
+ "name": "Health Daily Record",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "if_owner": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

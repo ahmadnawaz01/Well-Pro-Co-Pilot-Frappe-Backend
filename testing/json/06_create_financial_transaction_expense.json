@@ -1,0 +1,17 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.insert_record",
+  "_description": "Records essential grocery expense",
+  "doctype": "Financial Transaction",
+  "record_data": {
+    "transaction_type": "Expense",
+    "category": "Groceries & Food",
+    "amount": 128.5,
+    "transaction_date": "2026-10-23",
+    "merchant_or_source": "Fresh Market Co",
+    "description": "Weekly organic produce and pantry items",
+    "payment_method": "Card",
+    "is_recurring": 0,
+    "essentiality": "Essential",
+    "source": "Manual Entry"
+  }
+}

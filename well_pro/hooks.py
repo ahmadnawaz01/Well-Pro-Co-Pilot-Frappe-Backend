@@ -165,23 +165,11 @@ app_license = "mit"
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"well_pro.tasks.all"
-# 	],
-# 	"daily": [
-# 		"well_pro.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"well_pro.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"well_pro.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"well_pro.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"daily": [
+		"well_pro.well_pro_app.tasks.run_nightly_wellbeing_scoring"
+	]
+}
 
 # Testing
 # -------

@@ -1,0 +1,14 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.store_ai_record",
+  "_description": "Persists structured AI-extracted expense from receipt OCR",
+  "domain": "financial",
+  "record_data": {
+    "transaction_type": "Expense",
+    "category": "Groceries & Food",
+    "amount": 47.8,
+    "transaction_date": "2026-10-23",
+    "merchant_or_source": "Trader Joe's",
+    "description": "Produce and groceries",
+    "source": "OCR Receipt"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.insert_record",
+  "_description": "Records evening subjective check-in ratings (1-5)",
+  "doctype": "Subjective Wellbeing Checkin",
+  "record_data": {
+    "date": "2026-10-23",
+    "mood": 4,
+    "energy": 4,
+    "stress": 2,
+    "social_connection": 5,
+    "loneliness": 1,
+    "social_satisfaction": 5,
+    "financial_stress": 1
+  }
+}

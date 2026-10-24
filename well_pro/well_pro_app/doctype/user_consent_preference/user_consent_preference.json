@@ -1,15 +1,23 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2026-10-20 03:15:00.000000",
+ "autoname": "USR-CON-.YYYY.-.MM.-.#####",
+ "creation": "2026-10-23 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "user",
+  "health_tracking_enabled",
+  "financial_tracking_enabled",
+  "social_tracking_enabled",
   "allow_ai_processing",
-  "allow_voice_logging",
+  "allow_voice_processing",
+  "allow_image_processing",
   "allow_document_ocr",
-  "track_social_wellbeing"
+  "allow_health_ai_processing",
+  "allow_financial_ai_processing",
+  "consent_version",
+  "consent_updated_at"
  ],
  "fields": [
   {
@@ -19,42 +27,87 @@
    "label": "User",
    "options": "User",
    "reqd": 1,
-   "unique": 1
+   "unique": 1,
+   "search_index": 1
   },
   {
    "default": "1",
-   "fieldname": "allow_ai_processing",
+   "fieldname": "health_tracking_enabled",
    "fieldtype": "Check",
    "in_list_view": 1,
+   "label": "Health Tracking Enabled"
+  },
+  {
+   "default": "1",
+   "fieldname": "financial_tracking_enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Financial Tracking Enabled"
+  },
+  {
+   "default": "1",
+   "fieldname": "social_tracking_enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Social Tracking Enabled"
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_ai_processing",
+   "fieldtype": "Check",
    "label": "Allow AI Processing"
   },
   {
-   "default": "1",
-   "fieldname": "allow_voice_logging",
+   "default": "0",
+   "fieldname": "allow_voice_processing",
    "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Allow Voice Logging"
+   "label": "Allow Voice Processing"
   },
   {
-   "default": "1",
+   "default": "0",
+   "fieldname": "allow_image_processing",
+   "fieldtype": "Check",
+   "label": "Allow Image Processing"
+  },
+  {
+   "default": "0",
    "fieldname": "allow_document_ocr",
    "fieldtype": "Check",
    "label": "Allow Document OCR"
   },
   {
-   "default": "1",
-   "fieldname": "track_social_wellbeing",
+   "default": "0",
+   "fieldname": "allow_health_ai_processing",
    "fieldtype": "Check",
-   "label": "Track Social Wellbeing"
+   "label": "Allow Health AI Processing"
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_financial_ai_processing",
+   "fieldtype": "Check",
+   "label": "Allow Financial AI Processing"
+  },
+  {
+   "default": "v1.0",
+   "fieldname": "consent_version",
+   "fieldtype": "Data",
+   "label": "Consent Version"
+  },
+  {
+   "default": "Now",
+   "fieldname": "consent_updated_at",
+   "fieldtype": "Datetime",
+   "label": "Consent Updated At"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-20 03:15:00.000000",
+ "modified": "2026-10-23 03:48:07.993062",
  "modified_by": "Administrator",
  "module": "Well_pro_app",
  "name": "User Consent Preference",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
@@ -66,6 +119,19 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "if_owner": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All",
    "share": 1,
    "write": 1
   }

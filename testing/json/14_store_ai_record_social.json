@@ -1,0 +1,16 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.store_ai_record",
+  "_description": "Persists structured AI-extracted social activity from voice journal",
+  "domain": "social",
+  "record_data": {
+    "logged_at": "2026-10-23 15:00:00",
+    "interaction_type": "Call",
+    "relationship_type": "Family",
+    "duration_minutes": 35.0,
+    "interaction_quality": 4,
+    "connection_level": 4,
+    "mood_after": 4,
+    "notes": "Weekly phone call with parents",
+    "source": "Voice"
+  }
+}

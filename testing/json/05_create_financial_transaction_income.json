@@ -1,0 +1,17 @@
+{
+  "_endpoint": "POST /api/method/well_pro.well_pro_app.api.insert_record",
+  "_description": "Records bi-weekly salary income",
+  "doctype": "Financial Transaction",
+  "record_data": {
+    "transaction_type": "Income",
+    "category": "Salary & Wages",
+    "amount": 3500.0,
+    "transaction_date": "2026-10-23",
+    "merchant_or_source": "TechCorp Global",
+    "description": "Bi-weekly paycheck",
+    "payment_method": "Bank",
+    "is_recurring": 1,
+    "essentiality": "Essential",
+    "source": "Manual Entry"
+  }
+}
