@@ -10,7 +10,12 @@ from frappe.utils import today, add_days
 
 from well_pro.well_pro_app.services.scoring import (
     calculate_daily_score,
-    get_user_dashboard
+    get_user_dashboard,
+    get_user_scoring_config,
+    get_user_custom_goals,
+    parse_custom_goals,
+    convert_goal_to_config_scale,
+    DEFAULT_SCORING_CONFIG
 )
 
 # -------------------------------------------------------------------
@@ -228,6 +233,55 @@ def verify_user_session():
 # 2. DATA INSERTION / CREATION APIs
 # -------------------------------------------------------------------
 
+
+def _upsert_accumulate_daily_record(doctype: str, record_data: dict, user: str) -> Optional[Any]:
+    """
+    If a daily summary record (Health Daily Record or Financial Snapshot) already exists
+    for this user on the given date, accumulates the new record into the existing one
+    instead of failing with DuplicateEntryError. Returns the updated document, or None.
+    """
+    if doctype == "Health Daily Record":
+        rec_date = record_data.get("record_date")
+        if rec_date:
+            existing = frappe.db.exists("Health Daily Record", {"user": user, "record_date": rec_date})
+            if existing:
+                doc = frappe.get_doc("Health Daily Record", existing)
+                doc.steps = (doc.steps or 0) + int(record_data.get("steps") or 0)
+                doc.exercise_minutes = (doc.exercise_minutes or 0) + int(record_data.get("exercise_minutes") or 0)
+                doc.active_minutes = (doc.active_minutes or 0) + int(record_data.get("active_minutes") or 0)
+                if "water_liters" in record_data and record_data["water_liters"] is not None:
+                    doc.water_liters = round((doc.water_liters or 0.0) + float(record_data["water_liters"]), 2)
+                if "calories_consumed" in record_data and record_data["calories_consumed"] is not None:
+                    doc.calories_consumed = round((doc.calories_consumed or 0.0) + float(record_data["calories_consumed"]), 1)
+                if "protein_grams" in record_data and record_data["protein_grams"] is not None:
+                    doc.protein_grams = round((doc.protein_grams or 0.0) + float(record_data["protein_grams"]), 1)
+                if "fruit_veg_servings" in record_data and record_data["fruit_veg_servings"] is not None:
+                    doc.fruit_veg_servings = round((doc.fruit_veg_servings or 0.0) + float(record_data["fruit_veg_servings"]), 1)
+
+                for fld in ["sleep_hours", "sleep_quality", "energy_level", "self_rated_health", "exercise_intensity"]:
+                    if fld in record_data and record_data[fld] is not None:
+                        setattr(doc, fld, record_data[fld])
+
+                doc.save(ignore_permissions=True)
+                frappe.db.commit()
+                return doc
+
+    elif doctype == "Financial Snapshot":
+        snap_date = record_data.get("snapshot_date")
+        if snap_date:
+            existing = frappe.db.exists("Financial Snapshot", {"user": user, "snapshot_date": snap_date})
+            if existing:
+                doc = frappe.get_doc("Financial Snapshot", existing)
+                for fld, val in record_data.items():
+                    if fld not in PROTECTED_FIELDS and fld not in ["doctype", "user", "name"]:
+                        setattr(doc, fld, val)
+                doc.save(ignore_permissions=True)
+                frappe.db.commit()
+                return doc
+
+    return None
+
+
 @frappe.whitelist()
 def insert_record(doctype: str, record_data: Any):
     """
@@ -309,9 +363,13 @@ def insert_record(doctype: str, record_data: Any):
     for protected in PROTECTED_FIELDS:
         record_data.pop(protected, None)
 
-    doc = frappe.get_doc(record_data)
-    doc.insert(ignore_permissions=False)
-    frappe.db.commit()
+    existing_doc = _upsert_accumulate_daily_record(doctype, record_data, user)
+    if existing_doc:
+        doc = existing_doc
+    else:
+        doc = frappe.get_doc(record_data)
+        doc.insert(ignore_permissions=False)
+        frappe.db.commit()
 
     # Recalculate score for the specific affected date (not blindly today)
     affected_date = _extract_affected_date(doc)
@@ -403,9 +461,13 @@ def store_ai_record(domain: str, record_data: Any):
     for protected in PROTECTED_FIELDS:
         record_data.pop(protected, None)
 
-    doc = frappe.get_doc(record_data)
-    doc.insert(ignore_permissions=False)
-    frappe.db.commit()
+    existing_doc = _upsert_accumulate_daily_record(target_doctype, record_data, user)
+    if existing_doc:
+        doc = existing_doc
+    else:
+        doc = frappe.get_doc(record_data)
+        doc.insert(ignore_permissions=False)
+        frappe.db.commit()
 
     # Recalculate score for the specific date of the record
     affected_date = _extract_affected_date(doc)
@@ -746,3 +808,194 @@ def get_dashboard_metrics(days: int = 30):
         },
         message="Metrics retrieved"
     )
+
+# -------------------------------------------------------------------
+# 7. SCORING GOALS CONFIGURATION APIs
+# -------------------------------------------------------------------
+
+@frappe.whitelist(methods=["POST"])
+def setup_scoring_goals(
+    goals: Optional[Union[Dict[str, Any], str]] = None,
+    steps: Optional[Union[int, float, str]] = None,
+    budget: Optional[Union[int, float, str]] = None,
+    financial_budget: Optional[Union[int, float, str]] = None,
+    target_savings_rate: Optional[Union[float, str]] = None,
+    savings_rate: Optional[Union[float, str]] = None,
+    recalculate: Union[bool, int, str] = True,
+    reset: Union[bool, int, str] = False,
+    target_user: Optional[str] = None,
+    **kwargs
+):
+    """
+    Sets custom wellbeing scoring goals (e.g. 10000 steps, financial budget 10k, 20% savings rate).
+    Automatically parses human-friendly inputs (e.g. '10k', '20%', '2500ml', '$10,000') and
+    converts them into the exact config scale of values used by the scoring engine.
+
+    If a user has not configured custom goals, the original baseline config heuristics apply.
+    """
+    import json
+    user = frappe.session.user
+    if user == "Guest":
+        frappe.throw(_("Authentication required"), frappe.AuthenticationError)
+
+    # Multi-user isolation: standard users can only configure their own scoring goals
+    effective_user = user
+    if target_user and target_user != user:
+        if "System Manager" not in frappe.get_roles(user):
+            frappe.throw(_("Permission denied: Cannot configure scoring goals for another user"), frappe.PermissionError)
+        effective_user = target_user
+
+    is_reset = reset in (True, 1, "1", "true", "True")
+    if is_reset:
+        profile_name = frappe.db.get_value("WellPro Profile", {"user": effective_user}, "name")
+        if profile_name:
+            frappe.db.set_value("WellPro Profile", profile_name, "custom_scoring_goals", "{}")
+            frappe.db.commit()
+
+        recalc_res = None
+        should_recalc = recalculate in (True, 1, "1", "true", "True")
+        if should_recalc:
+            try:
+                recalc_res = calculate_daily_score(effective_user, today())
+            except Exception as e:
+                frappe.log_error(f"Score recalculation error on goals reset for {effective_user}: {str(e)}", "WellPro Scoring Error")
+
+        return success_response(
+            data={
+                "user": effective_user,
+                "custom_goals": {},
+                "effective_config": get_user_scoring_config(effective_user),
+                "recalculated_score": recalc_res
+            },
+            message="Custom scoring goals reset. Default configuration restored."
+        )
+
+    # Gather inputs from all supported sources
+    raw_input = {}
+    try:
+        req_json = frappe.request.get_json() if hasattr(frappe, "request") and frappe.request else None
+        if isinstance(req_json, dict):
+            raw_input.update(req_json)
+    except Exception:
+        pass
+
+    if goals:
+        if isinstance(goals, str):
+            try:
+                goals_dict = json.loads(goals)
+                if isinstance(goals_dict, dict):
+                    raw_input.update(goals_dict)
+            except Exception:
+                pass
+        elif isinstance(goals, dict):
+            raw_input.update(goals)
+
+    if steps is not None:
+        raw_input["steps"] = steps
+    if budget is not None:
+        raw_input["budget"] = budget
+    if financial_budget is not None:
+        raw_input["financial_budget"] = financial_budget
+    if target_savings_rate is not None:
+        raw_input["target_savings_rate"] = target_savings_rate
+    if savings_rate is not None:
+        raw_input["savings_rate"] = savings_rate
+
+    for k, v in kwargs.items():
+        if k not in ("cmd", "target_user", "recalculate", "reset") and v is not None:
+            raw_input[k] = v
+
+    converted_goals = parse_custom_goals(raw_input)
+    if not converted_goals:
+        frappe.throw(
+            _("No valid scoring goal parameters provided. Valid options include: steps (e.g. 10k), budget/financial_budget (e.g. 10k), savings_rate (e.g. 20%), active_minutes, exercise_minutes, water, sleep_min, etc."),
+            frappe.ValidationError
+        )
+
+    # Persist in WellPro Profile
+    existing_goals = get_user_custom_goals(effective_user)
+    existing_goals.update(converted_goals)
+    goals_json = json.dumps(existing_goals)
+
+    profile_name = frappe.db.get_value("WellPro Profile", {"user": effective_user}, "name")
+    if profile_name:
+        frappe.db.set_value("WellPro Profile", profile_name, "custom_scoring_goals", goals_json)
+    else:
+        profile_doc = frappe.get_doc({
+            "doctype": "WellPro Profile",
+            "user": effective_user,
+            "custom_scoring_goals": goals_json
+        })
+        profile_doc.insert(ignore_permissions=True)
+
+    # If custom budget was configured, synchronize with latest Financial Snapshot
+    if "budget_amount" in converted_goals:
+        snap_name = frappe.db.get_value(
+            "Financial Snapshot",
+            {"user": effective_user, "snapshot_date": ["<=", today()]},
+            "name",
+            order_by="snapshot_date desc"
+        )
+        if snap_name:
+            frappe.db.set_value("Financial Snapshot", snap_name, "budget_amount", converted_goals["budget_amount"])
+
+    frappe.db.commit()
+
+    # Recalculate daily score
+    recalculated_score = None
+    should_recalc = recalculate in (True, 1, "1", "true", "True")
+    if should_recalc:
+        try:
+            recalculated_score = calculate_daily_score(effective_user, today())
+        except Exception as e:
+            frappe.log_error(f"Score recalculation error on goal update for {effective_user}: {str(e)}", "WellPro Scoring Error")
+
+    effective_cfg = get_user_scoring_config(effective_user)
+    return success_response(
+        data={
+            "user": effective_user,
+            "configured_goals": converted_goals,
+            "all_custom_goals": existing_goals,
+            "effective_config": effective_cfg,
+            "recalculated_score": recalculated_score
+        },
+        message="Scoring goals updated and converted to config scale successfully"
+    )
+
+
+@frappe.whitelist(methods=["POST"])
+def set_scoring_goals(**kwargs):
+    """Alias for setup_scoring_goals."""
+    return setup_scoring_goals(**kwargs)
+
+
+@frappe.whitelist(methods=["GET"])
+def get_scoring_goals(target_user: Optional[str] = None):
+    """
+    Retrieves current custom scoring goals, default baseline heuristics,
+    and effective merged scoring config for the user.
+    """
+    user = frappe.session.user
+    if user == "Guest":
+        frappe.throw(_("Authentication required"), frappe.AuthenticationError)
+
+    effective_user = user
+    if target_user and target_user != user:
+        if "System Manager" not in frappe.get_roles(user):
+            frappe.throw(_("Permission denied: Cannot view scoring goals for another user"), frappe.PermissionError)
+        effective_user = target_user
+
+    custom_goals = get_user_custom_goals(effective_user)
+    effective_cfg = get_user_scoring_config(effective_user)
+
+    return success_response(
+        data={
+            "user": effective_user,
+            "has_custom_goals": bool(custom_goals),
+            "custom_goals": custom_goals,
+            "effective_config": effective_cfg,
+            "default_config": DEFAULT_SCORING_CONFIG
+        },
+        message="Scoring goals retrieved successfully"
+    )
+

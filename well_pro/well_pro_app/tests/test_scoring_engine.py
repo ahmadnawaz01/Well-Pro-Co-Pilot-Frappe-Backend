@@ -15,8 +15,12 @@ from well_pro.well_pro_app.services.scoring.aggregation import calculate_overall
 
 class TestScoringEngine(unittest.TestCase):
     def setUp(self):
-        # Bind frappe.local and frappe.local.db so frappe.db proxy resolves without MariaDB
+        self.orig_db = getattr(frappe.local, "db", None)
         frappe.local.db = MagicMock()
+
+    def tearDown(self):
+        if hasattr(self, "orig_db") and self.orig_db is not None:
+            frappe.local.db = self.orig_db
 
     def test_health_score_complete_data(self):
         frappe.local.db.get_value.return_value = _dict({

@@ -407,3 +407,87 @@ The following DocTypes are permitted in generic CRUD operations (`insert_record`
   ```bash
   curl -G "http://localhost:8000/api/method/well_pro.well_pro_app.api.get_dashboard"     -H "Authorization: token API_KEY:API_SECRET"
   ```
+
+---
+
+### 6. Scoring Goals & Personal Heuristics Configuration
+
+#### `setup_scoring_goals` / `set_scoring_goals`
+Allows an authenticated user to customize their wellbeing scoring targets (e.g. 10000 steps, financial budget 10k, 20% savings rate). Inputs can be provided as numbers or human-friendly strings (e.g. `"10k"`, `"20%"`, `"2500ml"`, `"$10,000"`), which are automatically parsed and converted into the engine's config scale.
+If a user does not customize a goal, the default baseline heuristic from `config.py` is applied.
+
+- **HTTP Method**: POST
+- **Path**: `well_pro.well_pro_app.api.setup_scoring_goals` (alias: `well_pro.well_pro_app.api.set_scoring_goals`)
+- **Auth Required**: Yes
+- **Parameters / Payload**:
+  - `steps` (int/str, optional): Target daily steps (e.g. `"10k"`, `10000`, `"8,000"`)
+  - `financial_budget` / `budget` (float/int/str, optional): Monthly spending budget (e.g. `"10k"`, `"$10,000"`, `10000.0`)
+  - `savings_rate` / `target_savings_rate` (float/str, optional): Target savings rate (e.g. `"20%"`, `20`, `0.20`)
+  - `active_minutes` (int/str, optional): Daily active minutes (e.g. `30`, `"30m"`, `"0.5h"`)
+  - `exercise_minutes` (int/str, optional): Daily exercise minutes (e.g. `45`, `"45m"`, `"1h"`)
+  - `water` / `water_liters` (float/str, optional): Daily hydration target (e.g. `"2.5L"`, `"2500ml"`, `2.5`)
+  - `sleep_min` / `sleep_max` (float/str, optional): Optimal sleep hours (e.g. `"7h"`, `7.5`)
+  - `goals` (dict/json string, optional): Nested dictionary of goals
+  - `recalculate` (bool, optional, default: true): Whether to trigger immediate daily score recalculation
+  - `reset` (bool, optional, default: false): If true, resets all custom goals back to default config heuristics
+- **Example cURL Request**:
+  ```bash
+  curl -X POST "http://localhost:8000/api/method/well_pro.well_pro_app.api.setup_scoring_goals" \
+    -H "Authorization: token API_KEY:API_SECRET" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "steps": "10k",
+      "financial_budget": "10k",
+      "savings_rate": "20%"
+    }'
+  ```
+- **Example Response**:
+  ```json
+  {
+    "message": {
+      "success": true,
+      "message": "Scoring goals updated and converted to config scale successfully",
+      "data": {
+        "user": "user@wellpro.test",
+        "configured_goals": {
+          "steps_target": 10000,
+          "budget_amount": 10000.0,
+          "target_savings_rate": 0.20
+        },
+        "all_custom_goals": {
+          "steps_target": 10000,
+          "budget_amount": 10000.0,
+          "target_savings_rate": 0.20
+        },
+        "effective_config": {
+          "steps_target": 10000,
+          "budget_amount": 10000.0,
+          "target_savings_rate": 0.20,
+          "active_minutes_target": 30,
+          "exercise_minutes_target": 45,
+          "sleep_optimal_min": 7.0,
+          "sleep_optimal_max": 9.0,
+          "water_liters_target": 2.5
+        },
+        "recalculated_score": {
+          "health_score": 92.5,
+          "financial_score": 88.0,
+          "social_score": 85.0,
+          "overall_score": 89.2
+        }
+      }
+    }
+  }
+  ```
+
+#### `get_scoring_goals`
+Retrieves the user's custom goals, the original default baseline config, and the effective active configuration.
+
+- **HTTP Method**: GET
+- **Path**: `well_pro.well_pro_app.api.get_scoring_goals`
+- **Auth Required**: Yes
+- **Example cURL Request**:
+  ```bash
+  curl -G "http://localhost:8000/api/method/well_pro.well_pro_app.api.get_scoring_goals" \
+    -H "Authorization: token API_KEY:API_SECRET"
+  ```

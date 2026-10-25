@@ -31,6 +31,8 @@ class TestWellProSecurityAndAPI(FrappeTestCase):
         self.user_b = "user_b@wellpro.test"
 
         for u in [self.user_a, self.user_b]:
+            frappe.db.delete("Health Daily Record", {"user": u})
+            frappe.db.delete("Wellbeing Daily Score", {"user": u})
             if not frappe.db.exists("User", u):
                 user_doc = frappe.get_doc({
                     "doctype": "User",

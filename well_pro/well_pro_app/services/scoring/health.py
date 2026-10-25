@@ -1,9 +1,9 @@
+﻿"""
+Health Wellbeing Domain Scoring Engine
+Processes Sleep, Physical Activity, Exercise, Nutrition, Hydration, and Self-Reported Vitals.
+Supports both default baseline heuristics and per-user custom scoring goals.
 """
-Health Domain Scoring Engine
-Processes Sleep, Physical Activity, Exercise, Nutrition, Hydration, and Self-Reported Wellbeing.
-Calculates score (0-100) and confidence/completeness (0-100) with weight renormalization.
-"""
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 import frappe
 from well_pro.well_pro_app.services.scoring.config import (
     HEALTH_METRIC_WEIGHTS,
@@ -20,21 +20,98 @@ from well_pro.well_pro_app.services.scoring.config import (
     CALORIES_OPTIMAL_MIN,
     CALORIES_OPTIMAL_MAX,
     CALORIES_TOLERANCE_MIN,
-    CALORIES_TOLERANCE_MAX
+    CALORIES_TOLERANCE_MAX,
+    get_user_scoring_config
 )
 from well_pro.well_pro_app.services.scoring.normalization import (
     clamp,
-    normalize_rating,
+    normalize_target_range,
     normalize_higher_is_better,
-    normalize_target_range
+    normalize_rating
 )
+
+def accumulate_daily_health_record(user: str, target_date: str) -> Optional[str]:
+    """
+    Syncs individual Health Activity records for a user on a given date
+    into the master Health Daily Record for that date.
+    """
+    if getattr(frappe.flags, "in_accumulation", False):
+        return None
+    activities = frappe.db.get_all(
+        "Health Activity",
+        filters={
+            "user": user,
+            "logged_at": ["between", [f"{target_date} 00:00:00", f"{target_date} 23:59:59"]]
+        },
+        fields=["duration_minutes", "steps", "calories_burned", "intensity"]
+    )
+
+    if not activities:
+        return None
+
+    total_activity_steps = sum(int(a.steps or 0) for a in activities)
+    total_activity_mins = int(round(sum(float(a.duration_minutes or 0) for a in activities)))
+
+    existing_name = frappe.db.exists(
+        "Health Daily Record",
+        {"user": user, "record_date": target_date}
+    )
+
+    if existing_name:
+        doc = frappe.get_doc("Health Daily Record", existing_name)
+        doc.steps = max(int(doc.steps or 0), total_activity_steps)
+        doc.exercise_minutes = max(int(doc.exercise_minutes or 0), total_activity_mins)
+        doc.active_minutes = max(int(doc.active_minutes or 0), total_activity_mins)
+        doc.flags.ignore_hooks = True
+        doc.save(ignore_permissions=True)
+        frappe.db.commit()
+        return doc.name
+    else:
+        doc = frappe.get_doc({
+            "doctype": "Health Daily Record",
+            "user": user,
+            "record_date": target_date,
+            "steps": total_activity_steps,
+            "exercise_minutes": total_activity_mins,
+            "active_minutes": total_activity_mins,
+            "source": "Wearable"
+        })
+        doc.flags.ignore_hooks = True
+        doc.insert(ignore_permissions=True)
+        frappe.db.commit()
+        return doc.name
+
 
 def calculate_health_score(user: str, target_date: str) -> Tuple[float, float]:
     """
     Computes daily health score and confidence for a given user and date.
+    Uses custom scoring goals if set by the user, otherwise falls back to defaults.
     Returns: (score: float, confidence: float)
     """
-    # 1. Fetch Health Daily Record
+    # 0. Sync and accumulate any Health Activity records for this date
+    try:
+        accumulate_daily_health_record(user, target_date)
+    except Exception as e:
+        frappe.log_error(f"Health daily record accumulation failed for {user} on {target_date}: {str(e)}", "WellPro Scoring Error")
+
+    # 1. Fetch user-specific scoring config (custom or default baseline)
+    cfg = get_user_scoring_config(user)
+    steps_target = cfg.get("steps_target", STEPS_TARGET)
+    active_minutes_target = cfg.get("active_minutes_target", ACTIVE_MINUTES_TARGET)
+    exercise_minutes_target = cfg.get("exercise_minutes_target", EXERCISE_MINUTES_TARGET)
+    sleep_opt_min = cfg.get("sleep_optimal_min", SLEEP_OPTIMAL_MIN)
+    sleep_opt_max = cfg.get("sleep_optimal_max", SLEEP_OPTIMAL_MAX)
+    sleep_tol_min = cfg.get("sleep_tolerance_min", SLEEP_TOLERANCE_MIN)
+    sleep_tol_max = cfg.get("sleep_tolerance_max", SLEEP_TOLERANCE_MAX)
+    water_target = cfg.get("water_liters_target", WATER_LITERS_TARGET)
+    fruit_veg_target = cfg.get("fruit_veg_servings_target", FRUIT_VEG_SERVINGS_TARGET)
+    protein_target = cfg.get("protein_grams_target", PROTEIN_GRAMS_TARGET)
+    cal_opt_min = cfg.get("calories_optimal_min", CALORIES_OPTIMAL_MIN)
+    cal_opt_max = cfg.get("calories_optimal_max", CALORIES_OPTIMAL_MAX)
+    cal_tol_min = cfg.get("calories_tolerance_min", CALORIES_TOLERANCE_MIN)
+    cal_tol_max = cfg.get("calories_tolerance_max", CALORIES_TOLERANCE_MAX)
+
+    # 2. Fetch Health Daily Record
     rec = frappe.db.get_value(
         "Health Daily Record",
         {"user": user, "record_date": target_date},
@@ -47,7 +124,7 @@ def calculate_health_score(user: str, target_date: str) -> Tuple[float, float]:
         as_dict=True
     )
 
-    # 2. Fetch any Health Activity records logged on target date to supplement
+    # 3. Fetch any Health Activity records logged on target date to supplement
     activities = frappe.db.get_all(
         "Health Activity",
         filters={
@@ -69,10 +146,10 @@ def calculate_health_score(user: str, target_date: str) -> Tuple[float, float]:
     if rec and rec.sleep_hours is not None:
         duration_score = normalize_target_range(
             rec.sleep_hours,
-            SLEEP_OPTIMAL_MIN,
-            SLEEP_OPTIMAL_MAX,
-            SLEEP_TOLERANCE_MIN,
-            SLEEP_TOLERANCE_MAX
+            sleep_opt_min,
+            sleep_opt_max,
+            sleep_tol_min,
+            sleep_tol_max
         )
         if duration_score is not None:
             sleep_score_parts.append(duration_score)
@@ -90,7 +167,7 @@ def calculate_health_score(user: str, target_date: str) -> Tuple[float, float]:
     exercise_mins = 0.0
     has_exercise_data = False
     if rec and rec.exercise_minutes is not None:
-        exercise_mins += float(rec.exercise_minutes)
+        exercise_mins = float(rec.exercise_minutes)
         has_exercise_data = True
     if activities:
         act_mins = sum(float(a.duration_minutes or 0) for a in activities)
@@ -99,28 +176,31 @@ def calculate_health_score(user: str, target_date: str) -> Tuple[float, float]:
             has_exercise_data = True
 
     if has_exercise_data:
-        ex_score = normalize_higher_is_better(exercise_mins, EXERCISE_MINUTES_TARGET)
+        ex_score = normalize_higher_is_better(exercise_mins, exercise_minutes_target)
         if ex_score is not None:
             component_scores["exercise"] = ex_score
             available_weights["exercise"] = HEALTH_METRIC_WEIGHTS["exercise"]
 
     # Component 3: General Activity (weight = 15)
     activity_parts = []
-    total_steps = None
+    total_steps = 0.0
+    has_steps_data = False
     if rec and rec.steps is not None:
         total_steps = float(rec.steps)
-    elif activities:
+        has_steps_data = True
+    if activities:
         act_steps = sum(int(a.steps or 0) for a in activities)
         if act_steps > 0:
-            total_steps = float(act_steps)
+            total_steps = max(total_steps, float(act_steps))
+            has_steps_data = True
 
-    if total_steps is not None:
-        steps_score = normalize_higher_is_better(total_steps, STEPS_TARGET)
+    if has_steps_data and total_steps > 0:
+        steps_score = normalize_higher_is_better(total_steps, steps_target)
         if steps_score is not None:
             activity_parts.append(steps_score)
 
     if rec and rec.active_minutes is not None:
-        active_score = normalize_higher_is_better(rec.active_minutes, ACTIVE_MINUTES_TARGET)
+        active_score = normalize_higher_is_better(rec.active_minutes, active_minutes_target)
         if active_score is not None:
             activity_parts.append(active_score)
 
@@ -131,22 +211,22 @@ def calculate_health_score(user: str, target_date: str) -> Tuple[float, float]:
     # Component 4: Nutrition (weight = 15)
     nutrition_parts = []
     if rec and rec.fruit_veg_servings is not None:
-        fv_score = normalize_higher_is_better(rec.fruit_veg_servings, FRUIT_VEG_SERVINGS_TARGET)
+        fv_score = normalize_higher_is_better(rec.fruit_veg_servings, fruit_veg_target)
         if fv_score is not None:
             nutrition_parts.append(fv_score)
 
     if rec and rec.protein_grams is not None:
-        prot_score = normalize_higher_is_better(rec.protein_grams, PROTEIN_GRAMS_TARGET)
+        prot_score = normalize_higher_is_better(rec.protein_grams, protein_target)
         if prot_score is not None:
             nutrition_parts.append(prot_score)
 
     if rec and rec.calories_consumed is not None:
         cal_score = normalize_target_range(
             rec.calories_consumed,
-            CALORIES_OPTIMAL_MIN,
-            CALORIES_OPTIMAL_MAX,
-            CALORIES_TOLERANCE_MIN,
-            CALORIES_TOLERANCE_MAX
+            cal_opt_min,
+            cal_opt_max,
+            cal_tol_min,
+            cal_tol_max
         )
         if cal_score is not None:
             nutrition_parts.append(cal_score)
@@ -157,7 +237,7 @@ def calculate_health_score(user: str, target_date: str) -> Tuple[float, float]:
 
     # Component 5: Hydration (weight = 10)
     if rec and rec.water_liters is not None:
-        water_score = normalize_higher_is_better(rec.water_liters, WATER_LITERS_TARGET)
+        water_score = normalize_higher_is_better(rec.water_liters, water_target)
         if water_score is not None:
             component_scores["hydration"] = water_score
             available_weights["hydration"] = HEALTH_METRIC_WEIGHTS["hydration"]

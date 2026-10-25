@@ -25,8 +25,20 @@ def calculate_daily_score(user: str, score_date: Optional[str] = None) -> Dict[s
     Computes Health, Financial, Social, and Overall Wellbeing scores for a user on a given date.
     Upserts the record in Wellbeing Daily Score idempotently based on (user, score_date, scoring_version).
     """
+    if getattr(frappe.flags, "in_scoring", False):
+        return {}
+
     if not score_date:
         score_date = today()
+
+    frappe.flags.in_scoring = True
+    try:
+        return _calculate_daily_score_internal(user, score_date)
+    finally:
+        frappe.flags.in_scoring = False
+
+
+def _calculate_daily_score_internal(user: str, score_date: str) -> Dict[str, Any]:
 
     # 1. Compute Category Scores & Confidences
     h_score, h_conf = calculate_health_score(user, score_date)
@@ -44,12 +56,13 @@ def calculate_daily_score(user: str, score_date: Optional[str] = None) -> Dict[s
     )
 
     # 3. Idempotent Upsert in Wellbeing Daily Score
+    # Search by (user, score_date) only to avoid version mismatch creating duplicate records.
+    # If a record exists for this user+date, always update it with fresh scores.
     existing = frappe.db.exists(
         "Wellbeing Daily Score",
         {
             "user": user,
-            "score_date": score_date,
-            "scoring_version": SCORING_VERSION
+            "score_date": score_date
         }
     )
 
@@ -62,11 +75,16 @@ def calculate_daily_score(user: str, score_date: Optional[str] = None) -> Dict[s
         doc.social_score = s_score
         doc.social_confidence = s_conf
         doc.overall_score = o_score or 0.0
+        doc.scoring_version = SCORING_VERSION
         doc.calculated_at = now()
         doc.save(ignore_permissions=True)
     else:
+        # Build a human-readable document name: SCORE-<user_short>-<date>
+        user_short = user.split("@")[0][:12].upper().replace(".", "-")
+        doc_name = f"SCORE-{user_short}-{score_date}"
         doc = frappe.get_doc({
             "doctype": "Wellbeing Daily Score",
+            "name": doc_name,
             "user": user,
             "score_date": score_date,
             "health_score": h_score,

@@ -76,7 +76,7 @@
    "label": "Overall Score"
   },
   {
-   "default": "v1.0",
+   "default": "v1",
    "fieldname": "scoring_version",
    "fieldtype": "Data",
    "label": "Scoring Version",
