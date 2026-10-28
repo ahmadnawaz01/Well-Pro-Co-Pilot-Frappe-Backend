@@ -7,6 +7,8 @@ Supports both default baseline heuristics and per-user custom scoring goals.
 """
 from typing import Tuple, Optional
 import frappe
+import frappe
+
 from well_pro.well_pro_app.services.scoring.config import (
     FINANCIAL_METRIC_WEIGHTS,
     TARGET_SAVINGS_RATE,
@@ -149,7 +151,11 @@ def calculate_financial_score(user: str, target_date: str) -> Tuple[float, float
     try:
         accumulate_daily_financial_snapshot(user, target_date)
     except Exception as e:
-        frappe.log_error(f"Financial daily snapshot accumulation failed for {user} on {target_date}: {str(e)}", "WellPro Scoring Error")
+        frappe.log_error(
+            title=f"Financial Snapshot Fail: {user}"[:140],
+            text=f"Financial daily snapshot accumulation failed for {user} on {target_date}.\nError: {str(e)}"
+        )
+
 
     # 1. Fetch user-specific scoring config (custom or default baseline)
     cfg = get_user_scoring_config(user)

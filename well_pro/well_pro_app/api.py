@@ -282,20 +282,17 @@ def _upsert_accumulate_daily_record(doctype: str, record_data: dict, user: str) 
     return None
 
 
-@frappe.whitelist()
-def insert_record(doctype: str, record_data: Any):
-    """
-    Generic insert endpoint enforcing strict DocType allowlist and user ownership.
-    Authoritative identity: frappe.session.user always overrides any client value.
-    Trigger score recalculation for the affected historical date.
-    """
-    user = frappe.session.user
-    if user == "Guest":
-        frappe.throw(_("Authentication required"), frappe.AuthenticationError)
+# -------------------------------------------------------------------
+# 2. DATA INSERTION / CREATION APIs (SINGLE & BATCH COMPATIBLE)
+# -------------------------------------------------------------------
+
+def _process_single_insert(doctype: str, record_data: Any, user: str):
+    """Internal helper to validate, normalize, and insert/upsert a single record."""
+    if not doctype:
+        frappe.throw(_("Missing 'doctype' in record specification"), frappe.MandatoryError)
 
     _validate_doctype(doctype)
 
-    # Protect internal scores and master categories from unauthorized normal user insert
     if doctype == "Wellbeing Daily Score":
         frappe.throw(_("Daily scores are calculated by the scoring engine and cannot be inserted directly"), frappe.PermissionError)
 
@@ -304,28 +301,46 @@ def insert_record(doctype: str, record_data: Any):
 
     if isinstance(record_data, str):
         record_data = frappe.parse_json(record_data)
+    elif not isinstance(record_data, dict):
+        frappe.throw(_("record_data must be a valid JSON object or dict"), frappe.ValidationError)
 
-    # DYNAMIC REFERENCE RESOLVER & AUTO-CREATION LAYER
+    # Clone dict to prevent mutation side-effects
+    record_data = dict(record_data)
+
+    # 1. Rating Boundary Validation (1 to 5)
+    rating_fields = {
+        "Health Daily Record": {"sleep_quality", "energy_level", "self_rated_health"},
+        "Financial Snapshot": {"financial_stress_rating"},
+        "Social Activity": {"interaction_quality", "connection_level", "mood_after"},
+        "Subjective Wellbeing Checkin": {"mood", "energy", "stress", "social_connection", "loneliness", "social_satisfaction", "financial_stress"}
+    }
+    if doctype in rating_fields:
+        for rf in rating_fields[doctype]:
+            if rf in record_data and record_data[rf] is not None:
+                val = int(record_data[rf])
+                if val < 1 or val > 5:
+                    frappe.throw(_("Field '{0}' in '{1}' must be an integer between 1 and 5").format(rf, doctype), frappe.ValidationError)
+                record_data[rf] = val
+
+    # 2. Positive Transaction Amount Check (> 0)
+    if doctype == "Financial Transaction" and "amount" in record_data and record_data["amount"] is not None:
+        if float(record_data["amount"]) <= 0:
+            frappe.throw(_("Transaction amount must be strictly greater than 0"), frappe.ValidationError)
+
+    # 3. Dynamic Category Resolver for Financial Transactions
     if doctype == "Financial Transaction" and record_data.get("category"):
-        category_input = record_data["category"]
-        
-        # Check if the input value is NOT already a valid database primary key name
+        category_input = str(record_data["category"]).strip()
         if not frappe.db.exists("Financial Category", category_input):
-            # Query the true name using the human-readable category_name field
             resolved_name = frappe.db.get_value("Financial Category", {"category_name": category_input}, "name")
-            
             if resolved_name:
                 record_data["category"] = resolved_name
             else:
-                # Resolve transaction type to a valid category type options bound
                 tx_type = record_data.get("transaction_type", "Expense")
-                # Map select constraints: "Income", "Expense", "Investment", "Debt", "Transfer"
                 category_type = tx_type if tx_type in ["Income", "Expense", "Investment", "Debt", "Transfer"] else "Expense"
                 if tx_type == "Debt Payment":
                     category_type = "Debt"
 
                 try:
-                    # Dynamically instantiate the missing link record bypassing standard permissions
                     new_cat = frappe.get_doc({
                         "doctype": "Financial Category",
                         "category_name": category_input,
@@ -341,21 +356,18 @@ def insert_record(doctype: str, record_data: Any):
                         frappe.LinkValidationError
                     )
 
-    # DYNAMIC FIELD CLEANUP LAYER FOR OTHER DOCTYPES
-    # Normalizes edge-case variant payload attributes from diverse client models or voice inputs
+    # 4. Standard Options Normalization
     if doctype == "Health Activity" and record_data.get("activity_type"):
-        # Enforce validation against standard Select constraints: "Walking", "Running", "Cycling", "Gym", "Sports", "Other"
         if record_data["activity_type"] not in ["Walking", "Running", "Cycling", "Gym", "Sports", "Other"]:
             if not record_data.get("raw_input"):
                 record_data["raw_input"] = f"Original Input: {record_data['activity_type']}"
             record_data["activity_type"] = "Other"
 
     if doctype == "Social Activity" and record_data.get("interaction_type"):
-        # Enforce options alignment: "In Person", "Call", "Video Call", "Messaging", "Group Activity", "Community Activity", "Other"
         if record_data["interaction_type"] not in ["In Person", "Call", "Video Call", "Messaging", "Group Activity", "Community Activity", "Other"]:
             record_data["interaction_type"] = "Other"
 
-    # Enforce authoritative ownership and remove protected system fields
+    # 5. Authoritative Identity & Strip Prohibited System Fields
     record_data["doctype"] = doctype
     if doctype in USER_OWNED_DOCTYPES:
         record_data["user"] = user
@@ -363,16 +375,159 @@ def insert_record(doctype: str, record_data: Any):
     for protected in PROTECTED_FIELDS:
         record_data.pop(protected, None)
 
+    # 6. Execute Insert / Daily Upsert
     existing_doc = _upsert_accumulate_daily_record(doctype, record_data, user)
     if existing_doc:
         doc = existing_doc
     else:
         doc = frappe.get_doc(record_data)
         doc.insert(ignore_permissions=False)
-        frappe.db.commit()
 
-    # Recalculate score for the specific affected date (not blindly today)
     affected_date = _extract_affected_date(doc)
+    return doc, affected_date
+
+
+@frappe.whitelist()
+def insert_record(
+    doctype: Optional[str] = None,
+    record_data: Optional[Any] = None,
+    records: Optional[Any] = None,
+    atomic: Any = True
+):
+    """
+    Inserts one record or a batch of records across different DocTypes.
+
+    1. Single Mode: Pass `doctype` and `record_data`
+    2. Batch Mode:  Pass `records` as a list:
+       [
+           {"doctype": "Financial Transaction", "record_data": {...}},
+           {"doctype": "Health Daily Record", "record_data": {...}}
+       ]
+    3. atomic (default True): If True, rolls back all records if any single record fails.
+    """
+    user = frappe.session.user
+    if user == "Guest":
+        frappe.throw(_("Authentication required"), frappe.AuthenticationError)
+
+    # Fallback to parse JSON from raw request body if needed
+    if not doctype and not records:
+        try:
+            req_body = frappe.request.get_json() if hasattr(frappe, "request") and frappe.request else None
+            if isinstance(req_body, dict):
+                doctype = req_body.get("doctype")
+                record_data = req_body.get("record_data")
+                records = req_body.get("records")
+                if "atomic" in req_body:
+                    atomic = req_body.get("atomic")
+        except Exception:
+            pass
+
+    is_atomic = atomic in (True, 1, "1", "true", "True")
+
+    # =================================================================
+    # CASE A: BATCH INSERTION (Multiple DocTypes)
+    # =================================================================
+    if records:
+        if isinstance(records, str):
+            records = frappe.parse_json(records)
+
+        if not isinstance(records, list):
+            frappe.throw(_("'records' must be a list of objects containing 'doctype' and 'record_data'"), frappe.ValidationError)
+
+        created_records = []
+        errors = []
+        affected_dates = set()
+
+        if is_atomic:
+            # Atomic mode: any error bubbles up and rolls back entire transaction
+            for idx, item in enumerate(records):
+                if not isinstance(item, dict):
+                    frappe.throw(_("Record at index {0} must be a dictionary").format(idx), frappe.ValidationError)
+
+                doc, affected_date = _process_single_insert(
+                    doctype=item.get("doctype"),
+                    record_data=item.get("record_data", {}),
+                    user=user
+                )
+                affected_dates.add(affected_date)
+                created_records.append({
+                    "index": idx,
+                    "doctype": item.get("doctype"),
+                    "name": doc.name,
+                    "record": doc.as_dict()
+                })
+
+            frappe.db.commit()
+
+            # Recalculate score for all dates touched in the batch
+            for dt in affected_dates:
+                try:
+                    calculate_daily_score(user, dt)
+                except Exception as e:
+                    frappe.log_error(f"Score recalculation error for {user} on {dt}: {str(e)}", "WellPro Scoring Error")
+
+            return success_response(
+                data=created_records,
+                count=len(created_records),
+                message=f"Successfully created {len(created_records)} records"
+            )
+
+        else:
+            # Non-atomic mode: uses savepoints so valid records save even if one fails
+            for idx, item in enumerate(records):
+                sp_name = f"batch_savepoint_{idx}"
+                frappe.db.savepoint(sp_name)
+                try:
+                    if not isinstance(item, dict):
+                        raise ValueError(_("Record must be a JSON object"))
+
+                    doc, affected_date = _process_single_insert(
+                        doctype=item.get("doctype"),
+                        record_data=item.get("record_data", {}),
+                        user=user
+                    )
+                    affected_dates.add(affected_date)
+                    created_records.append({
+                        "index": idx,
+                        "doctype": item.get("doctype"),
+                        "name": doc.name,
+                        "record": doc.as_dict()
+                    })
+                except Exception as ex:
+                    frappe.db.rollback(save_point=sp_name)
+                    errors.append({
+                        "index": idx,
+                        "doctype": item.get("doctype") if isinstance(item, dict) else None,
+                        "error": str(ex)
+                    })
+
+            frappe.db.commit()
+
+            for dt in affected_dates:
+                try:
+                    calculate_daily_score(user, dt)
+                except Exception as e:
+                    frappe.log_error(f"Score recalculation error for {user} on {dt}: {str(e)}", "WellPro Scoring Error")
+
+            return success_response(
+                data={
+                    "created": created_records,
+                    "errors": errors,
+                    "successful_count": len(created_records),
+                    "failed_count": len(errors)
+                },
+                message=f"Batch processed: {len(created_records)} succeeded, {len(errors)} failed"
+            )
+
+    # =================================================================
+    # CASE B: SINGLE RECORD INSERTION (Backward Compatible)
+    # =================================================================
+    if not doctype or record_data is None:
+        frappe.throw(_("Provide either 'records' (list) or both 'doctype' and 'record_data'"), frappe.MandatoryError)
+
+    doc, affected_date = _process_single_insert(doctype=doctype, record_data=record_data, user=user)
+    frappe.db.commit()
+
     try:
         calculate_daily_score(user, affected_date)
     except Exception as e:
@@ -383,94 +538,164 @@ def insert_record(doctype: str, record_data: Any):
         message=f"{doctype} created successfully"
     )
 
-
-
 @frappe.whitelist()
-def store_ai_record(domain: str, record_data: Any):
+def store_ai_record(
+    domain: Optional[str] = None,
+    record_data: Optional[Any] = None,
+    records: Optional[Any] = None,
+    atomic: Any = True
+):
     """
-    Dedicated endpoint used by FastAPI / AI extraction services to persist records.
-    Enforces domain mapping, allowlists, and authoritative caller ownership.
+    Dedicated ingestion endpoint for AI Agents and LLM extractions.
+    Automatically maps domains to DocTypes, enforces schema validation, 
+    and sets 'source' to 'AI Extraction' by default.
+
+    Supports:
+      1. Single Extraction: Pass 'domain' and 'record_data'
+      2. Multi-Domain Extraction: Pass 'records' as a list of domain payloads:
+         [
+           {"domain": "financial", "record_data": {...}},
+           {"domain": "health_activity", "record_data": {...}}
+         ]
     """
     user = frappe.session.user
     if user == "Guest":
         frappe.throw(_("Authentication required"), frappe.AuthenticationError)
 
-    target_doctype = DOMAIN_DOCTYPE_MAP.get(domain)
-    if not target_doctype:
-        frappe.throw(
-            _("Invalid target domain '{0}'. Allowed domains: {1}").format(domain, list(DOMAIN_DOCTYPE_MAP.keys())),
-            frappe.ValidationError
-        )
+    # Fallback to parse JSON from raw request body if passed as raw POST
+    if not domain and not records:
+        try:
+            req_body = frappe.request.get_json() if hasattr(frappe, "request") and frappe.request else None
+            if isinstance(req_body, dict):
+                domain = req_body.get("domain")
+                record_data = req_body.get("record_data")
+                records = req_body.get("records")
+                if "atomic" in req_body:
+                    atomic = req_body.get("atomic")
+        except Exception:
+            pass
 
-    if isinstance(record_data, str):
-        record_data = frappe.parse_json(record_data)
-
-    # 1. DYNAMIC REFERENCE RESOLVER & AUTO-CREATION LAYER (AI Engine Translation)
-    if target_doctype == "Financial Transaction" and record_data.get("category"):
-        category_input = record_data["category"]
+    # Helper to resolve domain to doctype and inject default AI source
+    def _prepare_ai_payload(target_domain: str, data: Any):
+        if not target_domain or target_domain not in DOMAIN_DOCTYPE_MAP:
+            frappe.throw(
+                _("Invalid domain '{0}'. Allowed domains: {1}").format(
+                    target_domain, list(DOMAIN_DOCTYPE_MAP.keys())
+                ),
+                frappe.ValidationError
+            )
+        target_doctype = DOMAIN_DOCTYPE_MAP[target_domain]
         
-        # Check if the AI-extracted category name is NOT already a valid database primary key
-        if not frappe.db.exists("Financial Category", category_input):
-            # Query the true name using the human-readable category_name field
-            resolved_name = frappe.db.get_value("Financial Category", {"category_name": category_input}, "name")
-            
-            if resolved_name:
-                record_data["category"] = resolved_name
-            else:
-                # Resolve transaction type to a valid category type options bound
-                tx_type = record_data.get("transaction_type", "Expense")
-                # Map select constraints: "Income", "Expense", "Investment", "Debt", "Transfer"
-                category_type = tx_type if tx_type in ["Income", "Expense", "Investment", "Debt", "Transfer"] else "Expense"
-                if tx_type == "Debt Payment":
-                    category_type = "Debt"
+        if isinstance(data, str):
+            data = frappe.parse_json(data)
+        elif not isinstance(data, dict):
+            frappe.throw(_("record_data must be a valid dictionary"), frappe.ValidationError)
 
+        data = dict(data)
+        if "source" not in data or not data["source"]:
+            data["source"] = "AI Extraction"
+
+        return target_doctype, data
+
+    is_atomic = atomic in (True, 1, "1", "true", "True")
+
+    # =================================================================
+    # CASE A: MULTI-DOMAIN BATCH EXTRACTION (e.g. from conversational text)
+    # =================================================================
+    if records:
+        if isinstance(records, str):
+            records = frappe.parse_json(records)
+
+        if not isinstance(records, list):
+            frappe.throw(_("'records' must be a list of objects containing 'domain' and 'record_data'"), frappe.ValidationError)
+
+        created_records = []
+        errors = []
+        affected_dates = set()
+
+        if is_atomic:
+            for idx, item in enumerate(records):
+                if not isinstance(item, dict):
+                    frappe.throw(_("Record at index {0} must be a dictionary").format(idx), frappe.ValidationError)
+
+                target_doctype, payload = _prepare_ai_payload(item.get("domain"), item.get("record_data", {}))
+                doc, affected_date = _process_single_insert(doctype=target_doctype, record_data=payload, user=user)
+                affected_dates.add(affected_date)
+                created_records.append({
+                    "index": idx,
+                    "domain": item.get("domain"),
+                    "doctype": target_doctype,
+                    "name": doc.name,
+                    "record": doc.as_dict()
+                })
+
+            frappe.db.commit()
+
+            for dt in affected_dates:
                 try:
-                    # Dynamically instantiate the missing category record on the fly
-                    new_cat = frappe.get_doc({
-                        "doctype": "Financial Category",
-                        "category_name": category_input,
-                        "category_type": category_type,
-                        "active": 1,
-                        "description": _("Auto-generated via AI Data Ingestion pipeline")
-                    })
-                    new_cat.insert(ignore_permissions=True)
-                    record_data["category"] = new_cat.name
+                    calculate_daily_score(user, dt)
                 except Exception as e:
-                    frappe.throw(
-                        _("AI Ingestion failed to dynamically initialize Financial Category '{0}': {1}").format(category_input, str(e)),
-                        frappe.LinkValidationError
-                    )
+                    frappe.log_error(f"Score recalculation error for {user} on {dt}: {str(e)}", "WellPro Scoring Error")
 
-    # 2. DYNAMIC FIELD CLEANUP LAYER FOR OTHER DOMAINS (AI Out-of-bounds Normalization)
-    if target_doctype == "Health Activity" and record_data.get("activity_type"):
-        # Enforce validation against standard Select constraints: "Walking", "Running", "Cycling", "Gym", "Sports", "Other"
-        if record_data["activity_type"] not in ["Walking", "Running", "Cycling", "Gym", "Sports", "Other"]:
-            if not record_data.get("raw_input"):
-                record_data["raw_input"] = f"Original AI Output: {record_data['activity_type']}"
-            record_data["activity_type"] = "Other"
+            return success_response(
+                data=created_records,
+                count=len(created_records),
+                message=f"Successfully processed {len(created_records)} AI domain extractions"
+            )
+        else:
+            for idx, item in enumerate(records):
+                sp_name = f"ai_savepoint_{idx}"
+                frappe.db.savepoint(sp_name)
+                try:
+                    if not isinstance(item, dict):
+                        raise ValueError(_("Record must be a JSON object"))
 
-    if target_doctype == "Social Activity" and record_data.get("interaction_type"):
-        # Enforce options alignment: "In Person", "Call", "Video Call", "Messaging", "Group Activity", "Community Activity", "Other"
-        if record_data["interaction_type"] not in ["In Person", "Call", "Video Call", "Messaging", "Group Activity", "Community Activity", "Other"]:
-            record_data["interaction_type"] = "Other"
+                    target_doctype, payload = _prepare_ai_payload(item.get("domain"), item.get("record_data", {}))
+                    doc, affected_date = _process_single_insert(doctype=target_doctype, record_data=payload, user=user)
+                    affected_dates.add(affected_date)
+                    created_records.append({
+                        "index": idx,
+                        "domain": item.get("domain"),
+                        "doctype": target_doctype,
+                        "name": doc.name,
+                        "record": doc.as_dict()
+                    })
+                except Exception as ex:
+                    frappe.db.rollback(save_point=sp_name)
+                    errors.append({
+                        "index": idx,
+                        "domain": item.get("domain") if isinstance(item, dict) else None,
+                        "error": str(ex)
+                    })
 
-    # Enforce authoritative ownership and remove protected system fields
-    record_data["doctype"] = target_doctype
-    record_data["user"] = user
+            frappe.db.commit()
 
-    for protected in PROTECTED_FIELDS:
-        record_data.pop(protected, None)
+            for dt in affected_dates:
+                try:
+                    calculate_daily_score(user, dt)
+                except Exception as e:
+                    frappe.log_error(f"Score recalculation error for {user} on {dt}: {str(e)}", "WellPro Scoring Error")
 
-    existing_doc = _upsert_accumulate_daily_record(target_doctype, record_data, user)
-    if existing_doc:
-        doc = existing_doc
-    else:
-        doc = frappe.get_doc(record_data)
-        doc.insert(ignore_permissions=False)
-        frappe.db.commit()
+            return success_response(
+                data={
+                    "created": created_records,
+                    "errors": errors,
+                    "successful_count": len(created_records),
+                    "failed_count": len(errors)
+                },
+                message=f"Batch processed: {len(created_records)} succeeded, {len(errors)} failed"
+            )
 
-    # Recalculate score for the specific date of the record
-    affected_date = _extract_affected_date(doc)
+    # =================================================================
+    # CASE B: SINGLE DOMAIN EXTRACTION
+    # =================================================================
+    if not domain or record_data is None:
+        frappe.throw(_("Missing parameters: Provide both 'domain' and 'record_data', or provide 'records' list."), frappe.MandatoryError)
+
+    target_doctype, payload = _prepare_ai_payload(domain, record_data)
+    doc, affected_date = _process_single_insert(doctype=target_doctype, record_data=payload, user=user)
+    frappe.db.commit()
+
     try:
         calculate_daily_score(user, affected_date)
     except Exception as e:
