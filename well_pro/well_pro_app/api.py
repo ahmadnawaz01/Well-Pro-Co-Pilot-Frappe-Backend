@@ -90,20 +90,80 @@ def _validate_doctype(doctype: str) -> None:
         )
 
 
+DOCTYPE_ALIASES = {
+    # Official names
+    "health daily record": "Health Daily Record",
+    "health activity": "Health Activity",
+    "financial transaction": "Financial Transaction",
+    "financial snapshot": "Financial Snapshot",
+    "financial category": "Financial Category",
+    "social activity": "Social Activity",
+    "subjective wellbeing checkin": "Subjective Wellbeing Checkin",
+    "user consent preference": "User Consent Preference",
+    "wellpro profile": "WellPro Profile",
+    "wellbeing daily score": "Wellbeing Daily Score",
+
+    # Underscore / snake_case names
+    "health_daily_record": "Health Daily Record",
+    "health_activity": "Health Activity",
+    "financial_transaction": "Financial Transaction",
+    "financial_snapshot": "Financial Snapshot",
+    "financial_category": "Financial Category",
+    "social_activity": "Social Activity",
+    "subjective_wellbeing_checkin": "Subjective Wellbeing Checkin",
+    "user_consent_preference": "User Consent Preference",
+    "wellpro_profile": "WellPro Profile",
+    "wellbeing_daily_score": "Wellbeing Daily Score",
+
+    # Domain aliases
+    "health": "Health Daily Record",
+    "activity": "Health Activity",
+    "exercise": "Health Activity",
+    "financial": "Financial Transaction",
+    "finance": "Financial Transaction",
+    "transaction": "Financial Transaction",
+    "transactions": "Financial Transaction",
+    "snapshot": "Financial Snapshot",
+    "social": "Social Activity",
+    "checkin": "Subjective Wellbeing Checkin",
+    "wellbeing": "Subjective Wellbeing Checkin",
+    "profile": "WellPro Profile",
+    "consent": "User Consent Preference"
+}
+
+
+def _resolve_doctype_name(identifier: Optional[str]) -> Optional[str]:
+    """Resolves an identifier (name, snake_case, or domain alias) to a valid WellPro DocType name."""
+    if not identifier:
+        return None
+    ident_str = str(identifier).strip()
+    if ident_str in ALLOWED_DOCTYPES:
+        return ident_str
+    lower_norm = ident_str.lower().replace("-", "_").replace(" ", "_")
+    if lower_norm in DOCTYPE_ALIASES:
+        return DOCTYPE_ALIASES[lower_norm]
+    spaced = ident_str.lower().replace("_", " ")
+    if spaced in DOCTYPE_ALIASES:
+        return DOCTYPE_ALIASES[spaced]
+    return None
+
+
 def _extract_affected_date(doc: Any) -> str:
-    """Extracts the relevant YYYY-MM-DD date from a source record for score recalculation."""
-    if hasattr(doc, "record_date") and doc.record_date:
-        return str(doc.record_date)
-    if hasattr(doc, "transaction_date") and doc.transaction_date:
-        return str(doc.transaction_date)
-    if hasattr(doc, "snapshot_date") and doc.snapshot_date:
-        return str(doc.snapshot_date)
-    if hasattr(doc, "date") and doc.date:
-        return str(doc.date)
-    if hasattr(doc, "score_date") and doc.score_date:
-        return str(doc.score_date)
-    if hasattr(doc, "logged_at") and doc.logged_at:
-        return str(doc.logged_at).split()[0]
+    """Extracts the relevant YYYY-MM-DD date from a source record or dict for score recalculation."""
+    def _get(field):
+        if isinstance(doc, dict):
+            return doc.get(field)
+        return getattr(doc, field, None)
+
+    for field in ("record_date", "transaction_date", "snapshot_date", "date", "score_date"):
+        val = _get(field)
+        if val:
+            return str(val)
+
+    logged = _get("logged_at")
+    if logged:
+        return str(logged).split()[0]
+
     return today()
 
 
@@ -230,66 +290,100 @@ def verify_user_session():
 
 
 # -------------------------------------------------------------------
-# 2. DATA INSERTION / CREATION APIs
+# 2. DATA INSERTION / CREATION APIs (SINGLE, BATCH & MULTI-DOCTYPE)
 # -------------------------------------------------------------------
 
 
 def _upsert_accumulate_daily_record(doctype: str, record_data: dict, user: str) -> Optional[Any]:
     """
-    If a daily summary record (Health Daily Record or Financial Snapshot) already exists
-    for this user on the given date, accumulates the new record into the existing one
-    instead of failing with DuplicateEntryError. Returns the updated document, or None.
+    If a record with a unique constraint (Health Daily Record, Financial Snapshot,
+    Subjective Wellbeing Checkin, WellPro Profile, User Consent Preference) already exists
+    for this user on the given date, accumulates or updates the existing record instead of
+    failing with DuplicateEntryError. Returns the updated document, or None.
     """
     if doctype == "Health Daily Record":
-        rec_date = record_data.get("record_date")
-        if rec_date:
-            existing = frappe.db.exists("Health Daily Record", {"user": user, "record_date": rec_date})
-            if existing:
-                doc = frappe.get_doc("Health Daily Record", existing)
-                doc.steps = (doc.steps or 0) + int(record_data.get("steps") or 0)
-                doc.exercise_minutes = (doc.exercise_minutes or 0) + int(record_data.get("exercise_minutes") or 0)
-                doc.active_minutes = (doc.active_minutes or 0) + int(record_data.get("active_minutes") or 0)
-                if "water_liters" in record_data and record_data["water_liters"] is not None:
-                    doc.water_liters = round((doc.water_liters or 0.0) + float(record_data["water_liters"]), 2)
-                if "calories_consumed" in record_data and record_data["calories_consumed"] is not None:
-                    doc.calories_consumed = round((doc.calories_consumed or 0.0) + float(record_data["calories_consumed"]), 1)
-                if "protein_grams" in record_data and record_data["protein_grams"] is not None:
-                    doc.protein_grams = round((doc.protein_grams or 0.0) + float(record_data["protein_grams"]), 1)
-                if "fruit_veg_servings" in record_data and record_data["fruit_veg_servings"] is not None:
-                    doc.fruit_veg_servings = round((doc.fruit_veg_servings or 0.0) + float(record_data["fruit_veg_servings"]), 1)
+        rec_date = record_data.get("record_date") or today()
+        existing = frappe.db.exists("Health Daily Record", {"user": user, "record_date": rec_date})
+        if existing:
+            doc = frappe.get_doc("Health Daily Record", existing)
+            doc.steps = (doc.steps or 0) + int(record_data.get("steps") or 0)
+            doc.exercise_minutes = (doc.exercise_minutes or 0) + int(record_data.get("exercise_minutes") or 0)
+            doc.active_minutes = (doc.active_minutes or 0) + int(record_data.get("active_minutes") or 0)
+            if "water_liters" in record_data and record_data["water_liters"] is not None:
+                doc.water_liters = round((doc.water_liters or 0.0) + float(record_data["water_liters"]), 2)
+            if "calories_consumed" in record_data and record_data["calories_consumed"] is not None:
+                doc.calories_consumed = round((doc.calories_consumed or 0.0) + float(record_data["calories_consumed"]), 1)
+            if "protein_grams" in record_data and record_data["protein_grams"] is not None:
+                doc.protein_grams = round((doc.protein_grams or 0.0) + float(record_data["protein_grams"]), 1)
+            if "fruit_veg_servings" in record_data and record_data["fruit_veg_servings"] is not None:
+                doc.fruit_veg_servings = round((doc.fruit_veg_servings or 0.0) + float(record_data["fruit_veg_servings"]), 1)
 
-                for fld in ["sleep_hours", "sleep_quality", "energy_level", "self_rated_health", "exercise_intensity"]:
-                    if fld in record_data and record_data[fld] is not None:
-                        setattr(doc, fld, record_data[fld])
+            for fld in ["sleep_hours", "sleep_quality", "energy_level", "self_rated_health", "exercise_intensity", "source"]:
+                if fld in record_data and record_data[fld] is not None:
+                    setattr(doc, fld, record_data[fld])
 
-                doc.save(ignore_permissions=True)
-                frappe.db.commit()
-                return doc
+            doc.save(ignore_permissions=True)
+            frappe.db.commit()
+            return doc
 
     elif doctype == "Financial Snapshot":
-        snap_date = record_data.get("snapshot_date")
-        if snap_date:
-            existing = frappe.db.exists("Financial Snapshot", {"user": user, "snapshot_date": snap_date})
-            if existing:
-                doc = frappe.get_doc("Financial Snapshot", existing)
-                for fld, val in record_data.items():
-                    if fld not in PROTECTED_FIELDS and fld not in ["doctype", "user", "name"]:
-                        setattr(doc, fld, val)
-                doc.save(ignore_permissions=True)
-                frappe.db.commit()
-                return doc
+        snap_date = record_data.get("snapshot_date") or today()
+        existing = frappe.db.exists("Financial Snapshot", {"user": user, "snapshot_date": snap_date})
+        if existing:
+            doc = frappe.get_doc("Financial Snapshot", existing)
+            for fld, val in record_data.items():
+                if fld not in PROTECTED_FIELDS and fld not in ["doctype", "user", "name"]:
+                    setattr(doc, fld, val)
+            doc.save(ignore_permissions=True)
+            frappe.db.commit()
+            return doc
+
+    elif doctype == "Subjective Wellbeing Checkin":
+        chk_date = record_data.get("date") or today()
+        existing = frappe.db.exists("Subjective Wellbeing Checkin", {"user": user, "date": chk_date})
+        if existing:
+            doc = frappe.get_doc("Subjective Wellbeing Checkin", existing)
+            for fld in ["mood", "energy", "stress", "social_connection", "loneliness", "social_satisfaction", "financial_stress"]:
+                if fld in record_data and record_data[fld] is not None:
+                    setattr(doc, fld, int(record_data[fld]))
+            doc.save(ignore_permissions=True)
+            frappe.db.commit()
+            return doc
+
+    elif doctype == "User Consent Preference":
+        existing = frappe.db.exists("User Consent Preference", {"user": user})
+        if existing:
+            doc = frappe.get_doc("User Consent Preference", existing)
+            for fld, val in record_data.items():
+                if fld not in PROTECTED_FIELDS and fld not in ["doctype", "user", "name"]:
+                    setattr(doc, fld, val)
+            doc.save(ignore_permissions=True)
+            frappe.db.commit()
+            return doc
+
+    elif doctype == "WellPro Profile":
+        existing = frappe.db.exists("WellPro Profile", {"user": user})
+        if existing:
+            doc = frappe.get_doc("WellPro Profile", existing)
+            for fld, val in record_data.items():
+                if fld not in PROTECTED_FIELDS and fld not in ["doctype", "user", "name"]:
+                    setattr(doc, fld, val)
+            doc.save(ignore_permissions=True)
+            frappe.db.commit()
+            return doc
 
     return None
 
 
-# -------------------------------------------------------------------
-# 2. DATA INSERTION / CREATION APIs (SINGLE & BATCH COMPATIBLE)
-# -------------------------------------------------------------------
-
-def _process_single_insert(doctype: str, record_data: Any, user: str):
+def _process_single_insert(doctype: str, record_data: Any, user: str) -> Tuple[Any, str]:
     """Internal helper to validate, normalize, and insert/upsert a single record."""
     if not doctype:
         frappe.throw(_("Missing 'doctype' in record specification"), frappe.MandatoryError)
+
+    resolved_dt = _resolve_doctype_name(doctype)
+    if not resolved_dt:
+        _validate_doctype(doctype)
+    doctype = resolved_dt
 
     _validate_doctype(doctype)
 
@@ -307,6 +401,18 @@ def _process_single_insert(doctype: str, record_data: Any, user: str):
     # Clone dict to prevent mutation side-effects
     record_data = dict(record_data)
 
+    # Fill default required dates/times if omitted
+    if doctype == "Health Daily Record" and not record_data.get("record_date"):
+        record_data["record_date"] = today()
+    elif doctype == "Financial Transaction" and not record_data.get("transaction_date"):
+        record_data["transaction_date"] = today()
+    elif doctype == "Financial Snapshot" and not record_data.get("snapshot_date"):
+        record_data["snapshot_date"] = today()
+    elif doctype == "Subjective Wellbeing Checkin" and not record_data.get("date"):
+        record_data["date"] = today()
+    elif doctype in ("Health Activity", "Social Activity") and not record_data.get("logged_at"):
+        record_data["logged_at"] = frappe.utils.now()
+
     # 1. Rating Boundary Validation (1 to 5)
     rating_fields = {
         "Health Daily Record": {"sleep_quality", "energy_level", "self_rated_health"},
@@ -322,20 +428,26 @@ def _process_single_insert(doctype: str, record_data: Any, user: str):
                     frappe.throw(_("Field '{0}' in '{1}' must be an integer between 1 and 5").format(rf, doctype), frappe.ValidationError)
                 record_data[rf] = val
 
-    # 2. Positive Transaction Amount Check (> 0)
-    if doctype == "Financial Transaction" and "amount" in record_data and record_data["amount"] is not None:
-        if float(record_data["amount"]) <= 0:
-            frappe.throw(_("Transaction amount must be strictly greater than 0"), frappe.ValidationError)
+    # 2. Financial Transaction Checks & Auto-Defaults
+    if doctype == "Financial Transaction":
+        if "amount" in record_data and record_data["amount"] is not None:
+            if float(record_data["amount"]) <= 0:
+                frappe.throw(_("Transaction amount must be strictly greater than 0"), frappe.ValidationError)
+        else:
+            frappe.throw(_("Transaction amount is required"), frappe.MandatoryError)
 
-    # 3. Dynamic Category Resolver for Financial Transactions
-    if doctype == "Financial Transaction" and record_data.get("category"):
-        category_input = str(record_data["category"]).strip()
+        tx_type = record_data.get("transaction_type") or "Expense"
+        if tx_type not in ["Income", "Expense", "Transfer", "Investment", "Debt Payment"]:
+            tx_type = "Expense"
+        record_data["transaction_type"] = tx_type
+
+        # Dynamic Category Resolver
+        category_input = str(record_data.get("category") or "General").strip()
         if not frappe.db.exists("Financial Category", category_input):
             resolved_name = frappe.db.get_value("Financial Category", {"category_name": category_input}, "name")
             if resolved_name:
                 record_data["category"] = resolved_name
             else:
-                tx_type = record_data.get("transaction_type", "Expense")
                 category_type = tx_type if tx_type in ["Income", "Expense", "Investment", "Debt", "Transfer"] else "Expense"
                 if tx_type == "Debt Payment":
                     category_type = "Debt"
@@ -356,18 +468,27 @@ def _process_single_insert(doctype: str, record_data: Any, user: str):
                         frappe.LinkValidationError
                     )
 
-    # 4. Standard Options Normalization
-    if doctype == "Health Activity" and record_data.get("activity_type"):
-        if record_data["activity_type"] not in ["Walking", "Running", "Cycling", "Gym", "Sports", "Other"]:
+    # 3. Standard Options Normalization
+    if doctype == "Health Activity":
+        act_type = record_data.get("activity_type") or "Other"
+        if act_type not in ["Walking", "Running", "Cycling", "Gym", "Sports", "Other"]:
             if not record_data.get("raw_input"):
-                record_data["raw_input"] = f"Original Input: {record_data['activity_type']}"
-            record_data["activity_type"] = "Other"
+                record_data["raw_input"] = f"Original Input: {act_type}"
+            act_type = "Other"
+        record_data["activity_type"] = act_type
 
-    if doctype == "Social Activity" and record_data.get("interaction_type"):
-        if record_data["interaction_type"] not in ["In Person", "Call", "Video Call", "Messaging", "Group Activity", "Community Activity", "Other"]:
-            record_data["interaction_type"] = "Other"
+    if doctype == "Social Activity":
+        int_type = record_data.get("interaction_type") or "Other"
+        if int_type not in ["In Person", "Call", "Video Call", "Messaging", "Group Activity", "Community Activity", "Other"]:
+            int_type = "Other"
+        record_data["interaction_type"] = int_type
 
-    # 5. Authoritative Identity & Strip Prohibited System Fields
+        rel_type = record_data.get("relationship_type") or "Other"
+        if rel_type not in ["Family", "Friend", "Partner", "Colleague", "Community", "Other"]:
+            rel_type = "Other"
+        record_data["relationship_type"] = rel_type
+
+    # 4. Authoritative Identity & Strip Prohibited System Fields
     record_data["doctype"] = doctype
     if doctype in USER_OWNED_DOCTYPES:
         record_data["user"] = user
@@ -375,7 +496,7 @@ def _process_single_insert(doctype: str, record_data: Any, user: str):
     for protected in PROTECTED_FIELDS:
         record_data.pop(protected, None)
 
-    # 6. Execute Insert / Daily Upsert
+    # 5. Execute Upsert or Insert
     existing_doc = _upsert_accumulate_daily_record(doctype, record_data, user)
     if existing_doc:
         doc = existing_doc
@@ -387,324 +508,430 @@ def _process_single_insert(doctype: str, record_data: Any, user: str):
     return doc, affected_date
 
 
-@frappe.whitelist()
+def _normalize_batch_payload(
+    doctype: Optional[str] = None,
+    record_data: Optional[Any] = None,
+    records: Optional[Any] = None,
+    domain: Optional[str] = None,
+    raw_body_or_kwargs: Optional[Dict[str, Any]] = None,
+    default_source: Optional[str] = None
+) -> Tuple[List[Dict[str, Any]], bool]:
+    """
+    Normalizes single, batch, multi-doctype, or domain payloads into a uniform list:
+    [
+        {"doctype": "DocType Name", "record_data": {...}},
+        ...
+    ]
+    Returns (normalized_records, is_single).
+    """
+    raw_dict = {}
+    if isinstance(raw_body_or_kwargs, dict):
+        raw_dict.update(raw_body_or_kwargs)
+
+    # 1. Direct list passed as records
+    if isinstance(records, str):
+        try:
+            records = frappe.parse_json(records)
+        except Exception:
+            pass
+
+    if isinstance(records, list):
+        items = []
+        for idx, item in enumerate(records):
+            if isinstance(item, str):
+                item = frappe.parse_json(item)
+            if not isinstance(item, dict):
+                frappe.throw(_("Record at index {0} must be a dictionary").format(idx), frappe.ValidationError)
+
+            item_dt = item.get("doctype") or item.get("domain") or doctype or domain
+            resolved_dt = _resolve_doctype_name(item_dt)
+            if not resolved_dt:
+                frappe.throw(_("Unknown or missing DocType/domain in record at index {0}").format(idx), frappe.ValidationError)
+
+            if "record_data" in item and isinstance(item["record_data"], (dict, str)):
+                sub_data = item["record_data"]
+                if isinstance(sub_data, str):
+                    sub_data = frappe.parse_json(sub_data)
+                d = dict(sub_data)
+            else:
+                d = {k: v for k, v in item.items() if k not in ("doctype", "domain", "index")}
+
+            if default_source and not d.get("source"):
+                d["source"] = default_source
+
+            items.append({"doctype": resolved_dt, "record_data": d})
+        return items, False
+
+    # 2. Multi-DocType / Multi-Domain Dictionary on Single Request
+    # e.g. {"Health Daily Record": {...}, "Financial Transaction": [{...}], "social": {...}}
+    dt_keys = [
+        k for k in raw_dict.keys()
+        if _resolve_doctype_name(k) is not None and k not in ("doctype", "domain", "cmd", "atomic", "record_data", "records")
+    ]
+    if dt_keys:
+        items = []
+        for k in dt_keys:
+            resolved_dt = _resolve_doctype_name(k)
+            val = raw_dict[k]
+            if isinstance(val, str):
+                try:
+                    val = frappe.parse_json(val)
+                except Exception:
+                    pass
+
+            if isinstance(val, list):
+                for sub in val:
+                    if isinstance(sub, str):
+                        sub = frappe.parse_json(sub)
+                    if isinstance(sub, dict):
+                        d = dict(sub)
+                        if default_source and not d.get("source"):
+                            d["source"] = default_source
+                        items.append({"doctype": resolved_dt, "record_data": d})
+            elif isinstance(val, dict):
+                d = dict(val)
+                if default_source and not d.get("source"):
+                    d["source"] = default_source
+                items.append({"doctype": resolved_dt, "record_data": d})
+
+        if items:
+            return items, len(items) == 1
+
+    # 3. Single record format
+    eff_identifier = doctype or domain or raw_dict.get("doctype") or raw_dict.get("domain")
+    eff_dt = _resolve_doctype_name(eff_identifier)
+    if eff_dt:
+        if record_data is not None:
+            if isinstance(record_data, str):
+                record_data = frappe.parse_json(record_data)
+            d = dict(record_data) if isinstance(record_data, dict) else {}
+        elif "record_data" in raw_dict:
+            rd = raw_dict["record_data"]
+            if isinstance(rd, str):
+                rd = frappe.parse_json(rd)
+            d = dict(rd) if isinstance(rd, dict) else {}
+        else:
+            d = {k: v for k, v in raw_dict.items() if k not in ("doctype", "domain", "cmd", "atomic", "record_data", "records")}
+
+        if default_source and not d.get("source"):
+            d["source"] = default_source
+
+        return [{"doctype": eff_dt, "record_data": d}], True
+
+    return [], False
+
+
+@frappe.whitelist(methods=["GET", "POST"])
 def insert_record(
     doctype: Optional[str] = None,
     record_data: Optional[Any] = None,
     records: Optional[Any] = None,
-    atomic: Any = True
+    atomic: Any = True,
+    **kwargs
 ):
     """
-    Inserts one record or a batch of records across different DocTypes.
-
-    1. Single Mode: Pass `doctype` and `record_data`
-    2. Batch Mode:  Pass `records` as a list:
-       [
-           {"doctype": "Financial Transaction", "record_data": {...}},
-           {"doctype": "Health Daily Record", "record_data": {...}}
-       ]
-    3. atomic (default True): If True, rolls back all records if any single record fails.
+    Universal Ingestion API:
+    Supports:
+    1. Single record:
+       - Pass `doctype` and `record_data`
+       - OR pass `doctype` and flat fields (e.g. `{"doctype": "Health Daily Record", "steps": 8000}`)
+    2. Batch records:
+       - Pass `records` as a list of dicts (flat or nested `record_data`)
+       - OR pass a JSON array as root request payload
+    3. Multi-DocType on a single request:
+       - Pass multiple DocTypes in a single object:
+         {
+             "Health Daily Record": {"steps": 8000, "sleep_hours": 7.5},
+             "Financial Transaction": [{"amount": 25, "category": "Food"}],
+             "Social Activity": {"activity_name": "Lunch"}
+         }
+    Automatically recalculates wellbeing scores for all affected dates immediately after insertion.
     """
     user = frappe.session.user
     if user == "Guest":
         frappe.throw(_("Authentication required"), frappe.AuthenticationError)
 
-    # Fallback to parse JSON from raw request body if needed
-    if not doctype and not records:
-        try:
-            req_body = frappe.request.get_json() if hasattr(frappe, "request") and frappe.request else None
-            if isinstance(req_body, dict):
-                doctype = req_body.get("doctype")
-                record_data = req_body.get("record_data")
-                records = req_body.get("records")
-                if "atomic" in req_body:
-                    atomic = req_body.get("atomic")
-        except Exception:
-            pass
+    req_body = None
+    try:
+        req_body = frappe.request.get_json() if hasattr(frappe, "request") and frappe.request else None
+    except Exception:
+        pass
+
+    combined_raw = {}
+    if isinstance(req_body, dict):
+        combined_raw.update(req_body)
+    if kwargs:
+        combined_raw.update(kwargs)
 
     is_atomic = atomic in (True, 1, "1", "true", "True")
+    if "atomic" in combined_raw:
+        is_atomic = combined_raw["atomic"] in (True, 1, "1", "true", "True")
 
-    # =================================================================
-    # CASE A: BATCH INSERTION (Multiple DocTypes)
-    # =================================================================
-    if records:
-        if isinstance(records, str):
-            records = frappe.parse_json(records)
-
-        if not isinstance(records, list):
-            frappe.throw(_("'records' must be a list of objects containing 'doctype' and 'record_data'"), frappe.ValidationError)
-
-        created_records = []
-        errors = []
-        affected_dates = set()
-
-        if is_atomic:
-            # Atomic mode: any error bubbles up and rolls back entire transaction
-            for idx, item in enumerate(records):
-                if not isinstance(item, dict):
-                    frappe.throw(_("Record at index {0} must be a dictionary").format(idx), frappe.ValidationError)
-
-                doc, affected_date = _process_single_insert(
-                    doctype=item.get("doctype"),
-                    record_data=item.get("record_data", {}),
-                    user=user
-                )
-                affected_dates.add(affected_date)
-                created_records.append({
-                    "index": idx,
-                    "doctype": item.get("doctype"),
-                    "name": doc.name,
-                    "record": doc.as_dict()
-                })
-
-            frappe.db.commit()
-
-            # Recalculate score for all dates touched in the batch
-            for dt in affected_dates:
-                try:
-                    calculate_daily_score(user, dt)
-                except Exception as e:
-                    frappe.log_error(f"Score recalculation error for {user} on {dt}: {str(e)}", "WellPro Scoring Error")
-
-            return success_response(
-                data=created_records,
-                count=len(created_records),
-                message=f"Successfully created {len(created_records)} records"
-            )
-
-        else:
-            # Non-atomic mode: uses savepoints so valid records save even if one fails
-            for idx, item in enumerate(records):
-                sp_name = f"batch_savepoint_{idx}"
-                frappe.db.savepoint(sp_name)
-                try:
-                    if not isinstance(item, dict):
-                        raise ValueError(_("Record must be a JSON object"))
-
-                    doc, affected_date = _process_single_insert(
-                        doctype=item.get("doctype"),
-                        record_data=item.get("record_data", {}),
-                        user=user
-                    )
-                    affected_dates.add(affected_date)
-                    created_records.append({
-                        "index": idx,
-                        "doctype": item.get("doctype"),
-                        "name": doc.name,
-                        "record": doc.as_dict()
-                    })
-                except Exception as ex:
-                    frappe.db.rollback(save_point=sp_name)
-                    errors.append({
-                        "index": idx,
-                        "doctype": item.get("doctype") if isinstance(item, dict) else None,
-                        "error": str(ex)
-                    })
-
-            frappe.db.commit()
-
-            for dt in affected_dates:
-                try:
-                    calculate_daily_score(user, dt)
-                except Exception as e:
-                    frappe.log_error(f"Score recalculation error for {user} on {dt}: {str(e)}", "WellPro Scoring Error")
-
-            return success_response(
-                data={
-                    "created": created_records,
-                    "errors": errors,
-                    "successful_count": len(created_records),
-                    "failed_count": len(errors)
-                },
-                message=f"Batch processed: {len(created_records)} succeeded, {len(errors)} failed"
-            )
-
-    # =================================================================
-    # CASE B: SINGLE RECORD INSERTION (Backward Compatible)
-    # =================================================================
-    if not doctype or record_data is None:
-        frappe.throw(_("Provide either 'records' (list) or both 'doctype' and 'record_data'"), frappe.MandatoryError)
-
-    doc, affected_date = _process_single_insert(doctype=doctype, record_data=record_data, user=user)
-    frappe.db.commit()
-
-    try:
-        calculate_daily_score(user, affected_date)
-    except Exception as e:
-        frappe.log_error(f"Score recalculation error on insert for {user}: {str(e)}", "WellPro Scoring Error")
-
-    return success_response(
-        data=doc.as_dict(),
-        message=f"{doctype} created successfully"
+    effective_records = records or (req_body if isinstance(req_body, list) else None)
+    normalized_records, is_single = _normalize_batch_payload(
+        doctype=doctype,
+        record_data=record_data,
+        records=effective_records,
+        raw_body_or_kwargs=combined_raw
     )
 
-@frappe.whitelist()
+    if not normalized_records:
+        frappe.throw(
+            _("No valid record data provided. Provide either 'records' list, a multi-doctype dictionary, or 'doctype' and 'record_data'."),
+            frappe.MandatoryError
+        )
+
+    created_records = []
+    errors = []
+    affected_dates = set()
+
+    if is_atomic:
+        for idx, item in enumerate(normalized_records):
+            doc, aff_dt = _process_single_insert(
+                doctype=item["doctype"],
+                record_data=item["record_data"],
+                user=user
+            )
+            affected_dates.add(aff_dt)
+            created_records.append({
+                "index": idx,
+                "doctype": item["doctype"],
+                "name": doc.name,
+                "affected_date": aff_dt,
+                "record": doc.as_dict()
+            })
+
+        frappe.db.commit()
+
+        # Recalculate score for all touched dates
+        recalc_scores = {}
+        for dt in affected_dates:
+            try:
+                recalc_scores[dt] = calculate_daily_score(user, dt)
+            except Exception as e:
+                frappe.log_error(f"Score recalculation error for {user} on {dt}: {str(e)}", "WellPro Scoring Error")
+
+        if is_single and len(created_records) == 1:
+            first = created_records[0]
+            return success_response(
+                data=first["record"],
+                name=first["name"],
+                doctype=first["doctype"],
+                affected_date=first["affected_date"],
+                recalculated_score=recalc_scores.get(first["affected_date"]),
+                message=f"{first['doctype']} created successfully"
+            )
+
+        return success_response(
+            data={
+                "created": created_records,
+                "count": len(created_records),
+                "affected_dates": sorted(list(affected_dates)),
+                "recalculated_scores": recalc_scores
+            },
+            message=f"Successfully created {len(created_records)} records"
+        )
+    else:
+        for idx, item in enumerate(normalized_records):
+            sp_name = f"batch_sp_{idx}"
+            frappe.db.savepoint(sp_name)
+            try:
+                doc, aff_dt = _process_single_insert(
+                    doctype=item["doctype"],
+                    record_data=item["record_data"],
+                    user=user
+                )
+                affected_dates.add(aff_dt)
+                created_records.append({
+                    "index": idx,
+                    "doctype": item["doctype"],
+                    "name": doc.name,
+                    "affected_date": aff_dt,
+                    "record": doc.as_dict()
+                })
+            except Exception as ex:
+                frappe.db.rollback(save_point=sp_name)
+                errors.append({
+                    "index": idx,
+                    "doctype": item.get("doctype"),
+                    "error": str(ex)
+                })
+
+        frappe.db.commit()
+
+        recalc_scores = {}
+        for dt in affected_dates:
+            try:
+                recalc_scores[dt] = calculate_daily_score(user, dt)
+            except Exception as e:
+                frappe.log_error(f"Score recalculation error for {user} on {dt}: {str(e)}", "WellPro Scoring Error")
+
+        return success_response(
+            data={
+                "created": created_records,
+                "errors": errors,
+                "successful_count": len(created_records),
+                "failed_count": len(errors),
+                "affected_dates": sorted(list(affected_dates)),
+                "recalculated_scores": recalc_scores
+            },
+            message=f"Batch processed: {len(created_records)} succeeded, {len(errors)} failed"
+        )
+
+
+@frappe.whitelist(methods=["GET", "POST"])
 def store_ai_record(
     domain: Optional[str] = None,
     record_data: Optional[Any] = None,
     records: Optional[Any] = None,
-    atomic: Any = True
+    doctype: Optional[str] = None,
+    atomic: Any = True,
+    **kwargs
 ):
     """
-    Dedicated ingestion endpoint for AI Agents and LLM extractions.
-    Automatically maps domains to DocTypes, enforces schema validation, 
-    and sets 'source' to 'AI Extraction' by default.
-
+    Dedicated AI Extraction Ingestion API:
     Supports:
-      1. Single Extraction: Pass 'domain' and 'record_data'
-      2. Multi-Domain Extraction: Pass 'records' as a list of domain payloads:
-         [
-           {"domain": "financial", "record_data": {...}},
-           {"domain": "health_activity", "record_data": {...}}
-         ]
+    1. Single Extraction: Pass `domain` (or `doctype`) and `record_data` (or flat fields)
+    2. Batch Extractions: Pass `records` list of domain extractions
+    3. Multi-Domain Payload:
+       {
+           "health": {"steps": 8000, "sleep_hours": 7},
+           "financial": [{"amount": 45, "category": "Groceries"}],
+           "social": {"activity_name": "Dinner with friends"}
+       }
+    Automatically assigns source='AI Extraction' and recalculates daily scores for all affected dates.
     """
     user = frappe.session.user
     if user == "Guest":
         frappe.throw(_("Authentication required"), frappe.AuthenticationError)
 
-    # Fallback to parse JSON from raw request body if passed as raw POST
-    if not domain and not records:
-        try:
-            req_body = frappe.request.get_json() if hasattr(frappe, "request") and frappe.request else None
-            if isinstance(req_body, dict):
-                domain = req_body.get("domain")
-                record_data = req_body.get("record_data")
-                records = req_body.get("records")
-                if "atomic" in req_body:
-                    atomic = req_body.get("atomic")
-        except Exception:
-            pass
+    req_body = None
+    try:
+        req_body = frappe.request.get_json() if hasattr(frappe, "request") and frappe.request else None
+    except Exception:
+        pass
 
-    # Helper to resolve domain to doctype and inject default AI source
-    def _prepare_ai_payload(target_domain: str, data: Any):
-        if not target_domain or target_domain not in DOMAIN_DOCTYPE_MAP:
-            frappe.throw(
-                _("Invalid domain '{0}'. Allowed domains: {1}").format(
-                    target_domain, list(DOMAIN_DOCTYPE_MAP.keys())
-                ),
-                frappe.ValidationError
-            )
-        target_doctype = DOMAIN_DOCTYPE_MAP[target_domain]
-        
-        if isinstance(data, str):
-            data = frappe.parse_json(data)
-        elif not isinstance(data, dict):
-            frappe.throw(_("record_data must be a valid dictionary"), frappe.ValidationError)
-
-        data = dict(data)
-        if "source" not in data or not data["source"]:
-            data["source"] = "AI Extraction"
-
-        return target_doctype, data
+    combined_raw = {}
+    if isinstance(req_body, dict):
+        combined_raw.update(req_body)
+    if kwargs:
+        combined_raw.update(kwargs)
 
     is_atomic = atomic in (True, 1, "1", "true", "True")
+    if "atomic" in combined_raw:
+        is_atomic = combined_raw["atomic"] in (True, 1, "1", "true", "True")
 
-    # =================================================================
-    # CASE A: MULTI-DOMAIN BATCH EXTRACTION (e.g. from conversational text)
-    # =================================================================
-    if records:
-        if isinstance(records, str):
-            records = frappe.parse_json(records)
+    effective_records = records or (req_body if isinstance(req_body, list) else None)
+    normalized_records, is_single = _normalize_batch_payload(
+        doctype=doctype,
+        record_data=record_data,
+        records=effective_records,
+        domain=domain,
+        raw_body_or_kwargs=combined_raw,
+        default_source="AI Extraction"
+    )
 
-        if not isinstance(records, list):
-            frappe.throw(_("'records' must be a list of objects containing 'domain' and 'record_data'"), frappe.ValidationError)
+    if not normalized_records:
+        frappe.throw(
+            _("No valid AI record extractions found to store. Provide 'domain'/'doctype' and record data, a multi-domain dictionary, or 'records' list."),
+            frappe.MandatoryError
+        )
 
-        created_records = []
-        errors = []
-        affected_dates = set()
+    created_records = []
+    errors = []
+    affected_dates = set()
 
-        if is_atomic:
-            for idx, item in enumerate(records):
-                if not isinstance(item, dict):
-                    frappe.throw(_("Record at index {0} must be a dictionary").format(idx), frappe.ValidationError)
+    if is_atomic:
+        for idx, item in enumerate(normalized_records):
+            doc, aff_dt = _process_single_insert(
+                doctype=item["doctype"],
+                record_data=item["record_data"],
+                user=user
+            )
+            affected_dates.add(aff_dt)
+            created_records.append({
+                "index": idx,
+                "doctype": item["doctype"],
+                "name": doc.name,
+                "affected_date": aff_dt,
+                "record": doc.as_dict()
+            })
 
-                target_doctype, payload = _prepare_ai_payload(item.get("domain"), item.get("record_data", {}))
-                doc, affected_date = _process_single_insert(doctype=target_doctype, record_data=payload, user=user)
-                affected_dates.add(affected_date)
+        frappe.db.commit()
+
+        recalc_scores = {}
+        for dt in affected_dates:
+            try:
+                recalc_scores[dt] = calculate_daily_score(user, dt)
+            except Exception as e:
+                frappe.log_error(f"Score recalculation error for {user} on {dt}: {str(e)}", "WellPro Scoring Error")
+
+        if is_single and len(created_records) == 1:
+            first = created_records[0]
+            return success_response(
+                data=first["record"],
+                name=first["name"],
+                doctype=first["doctype"],
+                affected_date=first["affected_date"],
+                recalculated_score=recalc_scores.get(first["affected_date"]),
+                message=f"Saved to {first['doctype']}"
+            )
+
+        return success_response(
+            data={
+                "created": created_records,
+                "count": len(created_records),
+                "affected_dates": sorted(list(affected_dates)),
+                "recalculated_scores": recalc_scores
+            },
+            message=f"Successfully processed {len(created_records)} AI domain extractions"
+        )
+    else:
+        for idx, item in enumerate(normalized_records):
+            sp_name = f"ai_sp_{idx}"
+            frappe.db.savepoint(sp_name)
+            try:
+                doc, aff_dt = _process_single_insert(
+                    doctype=item["doctype"],
+                    record_data=item["record_data"],
+                    user=user
+                )
+                affected_dates.add(aff_dt)
                 created_records.append({
                     "index": idx,
-                    "domain": item.get("domain"),
-                    "doctype": target_doctype,
+                    "doctype": item["doctype"],
                     "name": doc.name,
+                    "affected_date": aff_dt,
                     "record": doc.as_dict()
                 })
+            except Exception as ex:
+                frappe.db.rollback(save_point=sp_name)
+                errors.append({
+                    "index": idx,
+                    "doctype": item.get("doctype"),
+                    "error": str(ex)
+                })
 
-            frappe.db.commit()
+        frappe.db.commit()
 
-            for dt in affected_dates:
-                try:
-                    calculate_daily_score(user, dt)
-                except Exception as e:
-                    frappe.log_error(f"Score recalculation error for {user} on {dt}: {str(e)}", "WellPro Scoring Error")
+        recalc_scores = {}
+        for dt in affected_dates:
+            try:
+                recalc_scores[dt] = calculate_daily_score(user, dt)
+            except Exception as e:
+                frappe.log_error(f"Score recalculation error for {user} on {dt}: {str(e)}", "WellPro Scoring Error")
 
-            return success_response(
-                data=created_records,
-                count=len(created_records),
-                message=f"Successfully processed {len(created_records)} AI domain extractions"
-            )
-        else:
-            for idx, item in enumerate(records):
-                sp_name = f"ai_savepoint_{idx}"
-                frappe.db.savepoint(sp_name)
-                try:
-                    if not isinstance(item, dict):
-                        raise ValueError(_("Record must be a JSON object"))
-
-                    target_doctype, payload = _prepare_ai_payload(item.get("domain"), item.get("record_data", {}))
-                    doc, affected_date = _process_single_insert(doctype=target_doctype, record_data=payload, user=user)
-                    affected_dates.add(affected_date)
-                    created_records.append({
-                        "index": idx,
-                        "domain": item.get("domain"),
-                        "doctype": target_doctype,
-                        "name": doc.name,
-                        "record": doc.as_dict()
-                    })
-                except Exception as ex:
-                    frappe.db.rollback(save_point=sp_name)
-                    errors.append({
-                        "index": idx,
-                        "domain": item.get("domain") if isinstance(item, dict) else None,
-                        "error": str(ex)
-                    })
-
-            frappe.db.commit()
-
-            for dt in affected_dates:
-                try:
-                    calculate_daily_score(user, dt)
-                except Exception as e:
-                    frappe.log_error(f"Score recalculation error for {user} on {dt}: {str(e)}", "WellPro Scoring Error")
-
-            return success_response(
-                data={
-                    "created": created_records,
-                    "errors": errors,
-                    "successful_count": len(created_records),
-                    "failed_count": len(errors)
-                },
-                message=f"Batch processed: {len(created_records)} succeeded, {len(errors)} failed"
-            )
-
-    # =================================================================
-    # CASE B: SINGLE DOMAIN EXTRACTION
-    # =================================================================
-    if not domain or record_data is None:
-        frappe.throw(_("Missing parameters: Provide both 'domain' and 'record_data', or provide 'records' list."), frappe.MandatoryError)
-
-    target_doctype, payload = _prepare_ai_payload(domain, record_data)
-    doc, affected_date = _process_single_insert(doctype=target_doctype, record_data=payload, user=user)
-    frappe.db.commit()
-
-    try:
-        calculate_daily_score(user, affected_date)
-    except Exception as e:
-        frappe.log_error(f"Score recalculation error on AI store for {user}: {str(e)}", "WellPro Scoring Error")
-
-    return success_response(
-        data=doc.as_dict(),
-        message=f"Saved to {target_doctype}"
-    )
+        return success_response(
+            data={
+                "created": created_records,
+                "errors": errors,
+                "successful_count": len(created_records),
+                "failed_count": len(errors),
+                "affected_dates": sorted(list(affected_dates)),
+                "recalculated_scores": recalc_scores
+            },
+            message=f"Batch processed: {len(created_records)} succeeded, {len(errors)} failed"
+        )
 
 
 
@@ -973,7 +1200,7 @@ def recalculate_score(date: Optional[str] = None, target_user: Optional[str] = N
     )
 
 
-@frappe.whitelist(methods=["GET"])
+@frappe.whitelist(methods=["GET", "POST"])
 def get_dashboard(as_of_date: Optional[str] = None):
     """
     Returns full multi-dimensional Wellbeing Dashboard data for the authenticated user.
@@ -984,29 +1211,45 @@ def get_dashboard(as_of_date: Optional[str] = None):
     if user == "Guest":
         frappe.throw(_("Authentication required"), frappe.AuthenticationError)
 
-    dashboard_data = get_user_dashboard(user, as_of_date or today())
+    target_date = as_of_date or today()
+    dashboard_data = get_user_dashboard(user, target_date)
     return success_response(
         data=dashboard_data,
         message="Dashboard metrics retrieved successfully"
     )
 
 
-@frappe.whitelist(methods=["GET"])
-def get_dashboard_metrics(days: int = 30):
+@frappe.whitelist(methods=["GET", "POST"])
+def get_dashboard_metrics(days: Union[int, str] = 30, as_of_date: Optional[str] = None):
     """
-    Backward-compatibility endpoint for legacy dashboard consumers.
-    Returns modern scoring metrics together with raw activity feeds.
+    High-performance dashboard metrics endpoint.
+    Recalculates today's / target date score efficiently, computes multi-window recency trends,
+    and returns historical score trends alongside recent domain activity feeds.
     """
     user = frappe.session.user
     if user == "Guest":
         frappe.throw(_("Authentication required"), frappe.AuthenticationError)
 
-    start_date = add_days(today(), -int(days))
+    target_date = as_of_date or today()
+    try:
+        num_days = min(max(int(days or 30), 1), 365)
+    except Exception:
+        num_days = 30
+    start_date = add_days(target_date, -num_days)
 
-    # Fetch daily scores
+    # 1. Ensure current/target score is fresh and up-to-date
+    latest_score = calculate_daily_score(user, target_date)
+
+    # 2. Get multi-window aggregated dashboard metrics (today, 7d, 30d, 90d, trends)
+    dashboard_summary = get_user_dashboard(user, target_date)
+
+    # 3. Efficient historical score timeline
     scores = frappe.get_all(
         "Wellbeing Daily Score",
-        filters={"user": user, "score_date": [">=", start_date]},
+        filters={
+            "user": user,
+            "score_date": ["between", [start_date, target_date]]
+        },
         fields=[
             "score_date", "health_score", "health_confidence",
             "financial_score", "financial_confidence",
@@ -1015,23 +1258,57 @@ def get_dashboard_metrics(days: int = 30):
         order_by="score_date asc"
     )
 
-    # Refresh current score
-    latest_score = calculate_daily_score(user, today())
-
-    # Raw Recent Records
-    financial = frappe.get_all("Financial Transaction", filters={"user": user}, fields=["*"], order_by="transaction_date desc", limit=10)
-    health = frappe.get_all("Health Daily Record", filters={"user": user}, fields=["*"], order_by="record_date desc", limit=10)
-    social = frappe.get_all("Social Activity", filters={"user": user}, fields=["*"], order_by="logged_at desc", limit=10)
+    # 4. Concise recent domain records (limit 10 each, selecting client-relevant fields)
+    financial = frappe.get_all(
+        "Financial Transaction",
+        filters={"user": user},
+        fields=["name", "transaction_type", "category", "amount", "currency", "transaction_date", "merchant_or_source", "description", "essentiality", "source"],
+        order_by="transaction_date desc",
+        limit=10
+    )
+    health = frappe.get_all(
+        "Health Daily Record",
+        filters={"user": user},
+        fields=["name", "record_date", "sleep_hours", "sleep_quality", "steps", "active_minutes", "exercise_minutes", "water_liters", "calories_consumed", "protein_grams", "fruit_veg_servings", "energy_level", "self_rated_health", "source"],
+        order_by="record_date desc",
+        limit=10
+    )
+    health_activities = frappe.get_all(
+        "Health Activity",
+        filters={"user": user},
+        fields=["name", "activity_type", "logged_at", "duration_minutes", "distance_km", "steps", "calories_burned", "intensity", "source"],
+        order_by="logged_at desc",
+        limit=10
+    )
+    social = frappe.get_all(
+        "Social Activity",
+        filters={"user": user},
+        fields=["name", "logged_at", "interaction_type", "relationship_type", "duration_minutes", "interaction_quality", "connection_level", "mood_after", "notes", "source"],
+        order_by="logged_at desc",
+        limit=10
+    )
+    checkins = frappe.get_all(
+        "Subjective Wellbeing Checkin",
+        filters={"user": user},
+        fields=["name", "date", "mood", "energy", "stress", "social_connection", "loneliness", "social_satisfaction", "financial_stress"],
+        order_by="date desc",
+        limit=10
+    )
 
     return success_response(
         data={
             "current_scores": latest_score,
+            "summary": dashboard_summary,
             "historical_trends": scores,
             "financial": financial,
             "health": health,
-            "social": social
+            "health_activities": health_activities,
+            "social": social,
+            "checkins": checkins,
+            "as_of_date": target_date,
+            "days": num_days
         },
-        message="Metrics retrieved"
+        message="Dashboard metrics retrieved successfully"
     )
 
 # -------------------------------------------------------------------

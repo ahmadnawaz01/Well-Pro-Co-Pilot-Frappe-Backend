@@ -200,3 +200,75 @@ def get_user_dashboard(user: str, as_of_date: Optional[str] = None) -> Dict[str,
         "scoring_version": SCORING_VERSION,
         "as_of_date": str(as_of_date)
     }
+
+
+def _extract_doc_date_and_user(doc: Any):
+    """Extracts target user and affected date from a Frappe Document or dict safely."""
+    user = getattr(doc, "user", None) or getattr(doc, "owner", None)
+    if not user or user == "Administrator":
+        if hasattr(doc, "user") and doc.user:
+            user = doc.user
+
+    affected_date = None
+    if hasattr(doc, "record_date") and doc.record_date:
+        affected_date = str(doc.record_date)
+    elif hasattr(doc, "transaction_date") and doc.transaction_date:
+        affected_date = str(doc.transaction_date)
+    elif hasattr(doc, "snapshot_date") and doc.snapshot_date:
+        affected_date = str(doc.snapshot_date)
+    elif hasattr(doc, "date") and doc.date:
+        affected_date = str(doc.date)
+    elif hasattr(doc, "score_date") and doc.score_date:
+        affected_date = str(doc.score_date)
+    elif hasattr(doc, "logged_at") and doc.logged_at:
+        affected_date = str(doc.logged_at).split()[0]
+    else:
+        affected_date = today()
+
+    return user, affected_date
+
+
+def on_doctype_update(doc: Any, method: Optional[str] = None):
+    """
+    Doc events hook triggered on after_insert / on_update of any wellbeing source document.
+    Automatically recalculates the user's score for that specific date.
+    """
+    if getattr(frappe.flags, "in_scoring", False) or getattr(doc.flags, "ignore_hooks", False):
+        return
+    if getattr(doc, "doctype", None) == "Wellbeing Daily Score":
+        return
+
+    user, affected_date = _extract_doc_date_and_user(doc)
+    if not user or user == "Guest":
+        return
+
+    try:
+        calculate_daily_score(user, affected_date)
+    except Exception as e:
+        frappe.log_error(
+            f"Automatic score recalculation error on update of {getattr(doc, 'doctype', 'Doc')} {getattr(doc, 'name', '')} for {user}: {str(e)}",
+            "WellPro Scoring Error"
+        )
+
+
+def on_doctype_trash(doc: Any, method: Optional[str] = None):
+    """
+    Doc events hook triggered on on_trash of any wellbeing source document.
+    Automatically recalculates the user's score for that specific date.
+    """
+    if getattr(frappe.flags, "in_scoring", False) or getattr(doc.flags, "ignore_hooks", False):
+        return
+    if getattr(doc, "doctype", None) == "Wellbeing Daily Score":
+        return
+
+    user, affected_date = _extract_doc_date_and_user(doc)
+    if not user or user == "Guest":
+        return
+
+    try:
+        calculate_daily_score(user, affected_date)
+    except Exception as e:
+        frappe.log_error(
+            f"Automatic score recalculation error on deletion of {getattr(doc, 'doctype', 'Doc')} {getattr(doc, 'name', '')} for {user}: {str(e)}",
+            "WellPro Scoring Error"
+        )

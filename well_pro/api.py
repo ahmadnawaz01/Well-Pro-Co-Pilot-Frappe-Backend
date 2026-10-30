@@ -15,6 +15,9 @@ from well_pro.well_pro_app.api import (
     get_dashboard,
     get_dashboard_metrics,
     recalculate_score,
+    setup_scoring_goals,
+    set_scoring_goals,
+    get_scoring_goals,
     success_response,
     error_response
 )
@@ -31,6 +34,9 @@ __all__ = [
     "get_dashboard",
     "get_dashboard_metrics",
     "recalculate_score",
+    "setup_scoring_goals",
+    "set_scoring_goals",
+    "get_scoring_goals",
     "success_response",
     "error_response"
 ]
